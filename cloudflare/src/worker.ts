@@ -1,13 +1,12 @@
 /**
- * DynaFlux (DFX) — Serverless Cloudflare Worker for Discord Interactions
- * Connects Discord slash commands directly to `DynaFluxToken.sol` on Base Sepolia (or any EVM chain).
+ * DynaFlux (DFX) — High-Availability Serverless Cloudflare Worker for Discord Interactions
+ * Connects Discord slash commands directly to `DynaFluxToken.sol` on Ethereum Sepolia (or Base Sepolia).
  *
- * Commands supported:
- * 1. /report   - Mint (with lightweight PoW) or transfer DFX on-chain
- * 2. /withdraw - Withdraw DFX from your Discord vault address to any external MetaMask address (0x...)
- * 3. /balance  - Query on-chain DFX balance & deterministic vault address
- * 4. /summary  - Query on-chain (late, early) thermostatic state and gross->net table
- * 5. /verify   - Read on-chain cryptographic `stateHash` commitment and step count
+ * High-Availability (HA) Features:
+ * 1. Multi-RPC Automatic Failover (`fallback` transport across independent public endpoints).
+ * 2. Optimistic Concurrency Retry with exponential backoff (handles simultaneous `/report` calls
+ *    where `stateHash` or relayer account `nonce` advances mid-flight).
+ * 3. Live Relayer Gas Tank Monitoring in `/verify` (warns before Sepolia ETH runs low).
  */
 
 import {
@@ -16,6 +15,7 @@ import {
   createPublicClient,
   createWalletClient,
   encodePacked,
+  fallback,
   formatEther,
   http,
   isAddress,
@@ -36,6 +36,17 @@ export interface Env {
   CONTRACT_ADDRESS: Address;
 }
 
+const SEPOLIA_FALLBACK_RPCS = [
+  "https://ethereum-sepolia-rpc.publicnode.com",
+  "https://1rpc.io/sepolia",
+  "https://rpc.sepolia.org",
+];
+
+const BASE_SEPOLIA_FALLBACK_RPCS = [
+  "https://sepolia.base.org",
+  "https://base-sepolia-rpc.publicnode.com",
+];
+
 const DYNAFLUX_ABI = parseAbi([
   "function totalSupply() view returns (uint256)",
   "function balanceOf(address account) view returns (uint256)",
@@ -43,24 +54,18 @@ const DYNAFLUX_ABI = parseAbi([
   "function quoteNet(uint256 grossAmount, bool isGen) view returns (uint256 netAmount)",
   "function stateHash() view returns (bytes32)",
   "function stepCount() view returns (uint256)",
+  "function relayer() view returns (address)",
   "function mintTo(address recipient, uint256 grossAmount, uint256 powNonce) returns (uint256 netMinted)",
   "function relayTransfer(address from, address to, uint256 grossAmount) returns (bool)",
 ]);
 
 const POW_TARGET = (1n << 256n) - 1n >> 8n;
 
-/**
- * Derives a deterministic on-chain address for any Discord Snowflake ID.
- * Even if a member has never set up MetaMask, they immediately have an on-chain vault address.
- */
 export function discordUserToAddress(discordUserId: string): Address {
   const hash = keccak256(encodePacked(["string", "string"], ["DYNAFLUX_DISCORD_USER:", discordUserId]));
   return (`0x${hash.slice(26)}`) as Address;
 }
 
-/**
- * Solves the 8-bit lightweight PoW puzzle bound to the on-chain `stateHash`.
- */
 export function solveLightweightPow(
   stateHash: Hex,
   recipient: Address,
@@ -79,6 +84,37 @@ export function solveLightweightPow(
     }
     nonce++;
   }
+}
+
+function buildHaTransport(env: Env) {
+  const urls =
+    env.CHAIN_ID === "84532"
+      ? [env.RPC_URL, ...BASE_SEPOLIA_FALLBACK_RPCS]
+      : [env.RPC_URL, ...SEPOLIA_FALLBACK_RPCS];
+  const uniqueUrls = Array.from(new Set(urls.filter(Boolean)));
+  return fallback(
+    uniqueUrls.map((u) => http(u, { timeout: 8_000, retryCount: 1 })),
+    { rank: false }
+  );
+}
+
+async function withConcurrencyRetry<T>(
+  fn: (attempt: number) => Promise<T>,
+  maxAttempts = 3
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn(attempt);
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts) {
+        // Wait 600ms * attempt before re-reading fresh stateHash & pending nonce
+        await new Promise((r) => setTimeout(r, 600 * attempt));
+      }
+    }
+  }
+  throw lastError;
 }
 
 async function verifyDiscordSignature(
@@ -128,7 +164,7 @@ async function patchDiscordFollowup(appId: string, token: string, content: strin
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method !== "POST") {
-      return new Response("DynaFlux Discord On-Chain Worker Active", { status: 200 });
+      return new Response("DynaFlux Discord On-Chain Worker Active (HA Mode)", { status: 200 });
     }
 
     const bodyText = await request.text();
@@ -154,12 +190,12 @@ export default {
         options.find((o: { name: string; value: unknown }) => o.name === optName)?.value;
 
       const activeChain = env.CHAIN_ID === "84532" ? baseSepolia : sepolia;
+      const transport = buildHaTransport(env);
       const publicClient = createPublicClient({
         chain: activeChain,
-        transport: http(env.RPC_URL),
+        transport,
       });
 
-      // Read-only commands respond immediately (Type 4)
       if (name === "balance") {
         const targetUserId = (getOption("user") as string | undefined) ?? callerId;
         const targetAddr = discordUserToAddress(targetUserId);
@@ -198,17 +234,21 @@ export default {
         const lateDfx = Number(formatEther(late));
         const earlyDfx = Number(formatEther(early));
         const maxGross = Math.max(lateDfx, earlyDfx) * 2;
-        const rows: string[] = [];
-        for (let i = 1; i <= 6; i++) {
-          const g = (maxGross / 6) * i;
-          const q = await publicClient.readContract({
-            address: env.CONTRACT_ADDRESS,
-            abi: DYNAFLUX_ABI,
-            functionName: "quoteNet",
-            args: [parseEther(g.toFixed(6)), isGen],
-          });
-          rows.push(`${g.toFixed(2).padStart(10)} -> ${Number(formatEther(q)).toFixed(4).padStart(10)}`);
-        }
+        const sampleGrosses = Array.from({ length: 6 }, (_, idx) => (maxGross / 6) * (idx + 1));
+        const quotes = await Promise.all(
+          sampleGrosses.map((g) =>
+            publicClient.readContract({
+              address: env.CONTRACT_ADDRESS,
+              abi: DYNAFLUX_ABI,
+              functionName: "quoteNet",
+              args: [parseEther(g.toFixed(6)), isGen],
+            })
+          )
+        );
+        const rows = sampleGrosses.map(
+          (g, idx) =>
+            `${g.toFixed(2).padStart(10)} -> ${Number(formatEther(quotes[idx])).toFixed(4).padStart(10)}`
+        );
         return jsonResponse({
           type: 4,
           data: {
@@ -222,7 +262,7 @@ export default {
       }
 
       if (name === "verify") {
-        const [stateHash, steps] = await Promise.all([
+        const [stateHash, steps, relayerAddr] = await Promise.all([
           publicClient.readContract({
             address: env.CONTRACT_ADDRESS,
             abi: DYNAFLUX_ABI,
@@ -233,22 +273,33 @@ export default {
             abi: DYNAFLUX_ABI,
             functionName: "stepCount",
           }),
+          publicClient.readContract({
+            address: env.CONTRACT_ADDRESS,
+            abi: DYNAFLUX_ABI,
+            functionName: "relayer",
+          }),
         ]);
+        const relayerEth = await publicClient.getBalance({ address: relayerAddr });
+        const ethNum = Number(formatEther(relayerEth));
+        const gasWarning =
+          ethNum < 0.005
+            ? ` ⚠️ **(残高低下: Faucetから \`${relayerAddr}\` へテストETHを補充してください)**`
+            : " (正常)";
+
         return jsonResponse({
           type: 4,
           data: {
             content:
-              `**[オンチェーン状態証明 (EVM State Commitment)]**\n` +
+              `**[オンチェーン状態証明 & 可用性ステータス]**\n` +
               `- コントラクト: [\`${env.CONTRACT_ADDRESS}\`](${env.EXPLORER_URL}/address/${env.CONTRACT_ADDRESS})\n` +
               `- 累積ステップ数: \`${steps.toString()}\`\n` +
               `- 最新 \`stateHash\`: \`${stateHash}\`\n` +
+              `- ガス代タンク (\`relayer\`): \`${ethNum.toFixed(4)} ETH\`${gasWarning}\n` +
               `- 検証ステータス: **VALID (EVM決定論的コンセンサスにより改竄不可)**`,
           },
         });
       }
 
-      // State-modifying commands (/report, /withdraw):
-      // Defer response (Type 5) so Cloudflare Worker can broadcast the on-chain transaction asynchronously
       if (name === "report" || name === "withdraw") {
         ctx.waitUntil(
           (async () => {
@@ -257,7 +308,7 @@ export default {
               const walletClient = createWalletClient({
                 account: relayerAccount,
                 chain: activeChain,
-                transport: http(env.RPC_URL),
+                transport,
               });
 
               const amountNum = Number(getOption("amount") ?? 0);
@@ -273,52 +324,73 @@ export default {
                   await patchDiscordFollowup(
                     env.DISCORD_APP_ID,
                     interaction.token,
-                    "エラー: 有効な MetaMask / EVM アドレス (`0x...`) を指定してください。"
+                    "エラー: 有効な EVM アドレス (`0x...`) を指定してください。"
                   );
                   return;
                 }
-                const netQuote = await publicClient.readContract({
-                  address: env.CONTRACT_ADDRESS,
-                  abi: DYNAFLUX_ABI,
-                  functionName: "quoteNet",
-                  args: [grossWei, false],
+                const { txHash, netQuote } = await withConcurrencyRetry(async () => {
+                  const [quote, pendingNonce] = await Promise.all([
+                    publicClient.readContract({
+                      address: env.CONTRACT_ADDRESS,
+                      abi: DYNAFLUX_ABI,
+                      functionName: "quoteNet",
+                      args: [grossWei, false],
+                    }),
+                    publicClient.getTransactionCount({
+                      address: relayerAccount.address,
+                      blockTag: "pending",
+                    }),
+                  ]);
+                  const hash = await walletClient.writeContract({
+                    address: env.CONTRACT_ADDRESS,
+                    abi: DYNAFLUX_ABI,
+                    functionName: "relayTransfer",
+                    args: [callerAddress, toAddressRaw, grossWei],
+                    nonce: pendingNonce,
+                  });
+                  return { txHash: hash, netQuote: quote };
                 });
-                const txHash = await walletClient.writeContract({
-                  address: env.CONTRACT_ADDRESS,
-                  abi: DYNAFLUX_ABI,
-                  functionName: "relayTransfer",
-                  args: [callerAddress, toAddressRaw, grossWei],
-                });
+
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
-                  `**[MetaMask 外部ウォレット出金完了]**\n` +
+                  `**[外部ウォレット出金完了]**\n` +
                     `- 送金元 (Discord Vault): \`${callerAddress}\`\n` +
-                    `- 送金先 (MetaMask): \`${toAddressRaw}\`\n` +
+                    `- 送金先: \`${toAddressRaw}\`\n` +
                     `- 額面 (Gross): \`${amountNum.toFixed(4)} DFX\` → **着金見込 (Net): \`${Number(formatEther(netQuote)).toFixed(6)} DFX\`**\n` +
                     `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
                 return;
               }
 
-              // /report command
               const transferMode = Boolean(getOption("transfer_mode") ?? false);
               const recipientUserId = (getOption("recipient") as string | undefined) ?? callerId;
               const recipientAddress = discordUserToAddress(recipientUserId);
 
               if (transferMode) {
-                const netQuote = await publicClient.readContract({
-                  address: env.CONTRACT_ADDRESS,
-                  abi: DYNAFLUX_ABI,
-                  functionName: "quoteNet",
-                  args: [grossWei, false],
+                const { txHash, netQuote } = await withConcurrencyRetry(async () => {
+                  const [quote, pendingNonce] = await Promise.all([
+                    publicClient.readContract({
+                      address: env.CONTRACT_ADDRESS,
+                      abi: DYNAFLUX_ABI,
+                      functionName: "quoteNet",
+                      args: [grossWei, false],
+                    }),
+                    publicClient.getTransactionCount({
+                      address: relayerAccount.address,
+                      blockTag: "pending",
+                    }),
+                  ]);
+                  const hash = await walletClient.writeContract({
+                    address: env.CONTRACT_ADDRESS,
+                    abi: DYNAFLUX_ABI,
+                    functionName: "relayTransfer",
+                    args: [callerAddress, recipientAddress, grossWei],
+                    nonce: pendingNonce,
+                  });
+                  return { txHash: hash, netQuote: quote };
                 });
-                const txHash = await walletClient.writeContract({
-                  address: env.CONTRACT_ADDRESS,
-                  abi: DYNAFLUX_ABI,
-                  functionName: "relayTransfer",
-                  args: [callerAddress, recipientAddress, grossWei],
-                });
+
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
@@ -328,24 +400,35 @@ export default {
                     `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
               } else {
-                const currentHash = await publicClient.readContract({
-                  address: env.CONTRACT_ADDRESS,
-                  abi: DYNAFLUX_ABI,
-                  functionName: "stateHash",
+                const { txHash, netQuote, nonce, hashes } = await withConcurrencyRetry(async () => {
+                  const [currentHash, quote, pendingNonce] = await Promise.all([
+                    publicClient.readContract({
+                      address: env.CONTRACT_ADDRESS,
+                      abi: DYNAFLUX_ABI,
+                      functionName: "stateHash",
+                    }),
+                    publicClient.readContract({
+                      address: env.CONTRACT_ADDRESS,
+                      abi: DYNAFLUX_ABI,
+                      functionName: "quoteNet",
+                      args: [grossWei, true],
+                    }),
+                    publicClient.getTransactionCount({
+                      address: relayerAccount.address,
+                      blockTag: "pending",
+                    }),
+                  ]);
+                  const pow = solveLightweightPow(currentHash, recipientAddress, grossWei);
+                  const hash = await walletClient.writeContract({
+                    address: env.CONTRACT_ADDRESS,
+                    abi: DYNAFLUX_ABI,
+                    functionName: "mintTo",
+                    args: [recipientAddress, grossWei, pow.nonce],
+                    nonce: pendingNonce,
+                  });
+                  return { txHash: hash, netQuote: quote, nonce: pow.nonce, hashes: pow.hashes };
                 });
-                const netQuote = await publicClient.readContract({
-                  address: env.CONTRACT_ADDRESS,
-                  abi: DYNAFLUX_ABI,
-                  functionName: "quoteNet",
-                  args: [grossWei, true],
-                });
-                const { nonce, hashes } = solveLightweightPow(currentHash, recipientAddress, grossWei);
-                const txHash = await walletClient.writeContract({
-                  address: env.CONTRACT_ADDRESS,
-                  abi: DYNAFLUX_ABI,
-                  functionName: "mintTo",
-                  args: [recipientAddress, grossWei, nonce],
-                });
+
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
