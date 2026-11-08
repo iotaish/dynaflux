@@ -4,13 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "chain-deploy": "tsx scripts/deploy_contract.ts"
   },
   "dependencies": {
     "viem": "^2.21.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250109.0",
+    "solc": "^0.8.28",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "wrangler": "^3.99.0"
   }
