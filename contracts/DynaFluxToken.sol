@@ -58,12 +58,12 @@ contract DynaFluxToken is IERC20 {
     // Decay rates:
     // `late` decays to 0.1x over 30 days (2,592,000 seconds):
     // lambda_late = ln(10) / 2,592,000 ≈ 8.88342958e-7 * 1e18 = 888_342_958_043
-    uint256 public constant LAMBDA_LATE  = 888_342_958_043;
+    uint256 public constant LAMBDA_LATE  = 888_343_014_272;
     // `early` tracks the long-term 30-day reference window (decays 3x slower to retain 30d history):
-    uint256 public constant LAMBDA_EARLY = 296_114_319_347;
+    uint256 public constant LAMBDA_EARLY = 296_114_338_091;
 
     // Minimum ignition floor for `early` (replaces manual `inut` seeding after long idle periods)
-    uint256 public constant MIN_EARLY = 150 * WAD;
+    uint256 public constant MIN_EARLY = 150_000_000_000_000_000_000;
 
     // --- Thermostatic & Cryptographic Proof State ---
     uint256 public lateState;

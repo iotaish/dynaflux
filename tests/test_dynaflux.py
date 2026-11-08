@@ -4,7 +4,17 @@ from pathlib import Path
 
 import pytest
 
-from dynaflux import C_GEN, MIN_EARLY, WAD, Ledger, exp_neg_wad, verify_snapshot
+from dynaflux import (
+    C_GEN,
+    MIN_EARLY,
+    WAD,
+    DynaFluxParams,
+    Ledger,
+    exp_neg_wad,
+    freeze_params_to_solidity,
+    load_params,
+    verify_snapshot,
+)
 
 
 def test_exp_neg_wad_stability() -> None:
@@ -82,3 +92,33 @@ def test_cryptographic_audit_and_tamper_detection(tmp_path: Path) -> None:
     tampered_res = verify_snapshot(reloaded.snapshot)
     assert tampered_res.valid is False
     assert tampered_res.failed_step == 2
+
+
+def test_yaml_params_and_solidity_freeze(tmp_path: Path) -> None:
+    """Parameters loaded from YAML compile to WAD and freeze cleanly into Solidity source."""
+    params = load_params()
+    assert params.c_transfer_wad() == 980_000_000_000_000_000
+    assert params.c_gen_wad() == 1_568_000_000_000_000_000
+
+    sol_copy = tmp_path / "DynaFluxToken.sol"
+    orig_sol = Path(__file__).resolve().parents[1] / "contracts" / "DynaFluxToken.sol"
+    sol_copy.write_text(orig_sol.read_text(encoding="utf-8"), encoding="utf-8")
+
+    custom = DynaFluxParams.model_validate(
+        {
+            "token": {"name": "CustomFlux", "symbol": "CFX"},
+            "thermostat": {
+                "const": 0.95,
+                "gen_dis_rate": 2.0,
+                "decay_to_tenth_days": 14.0,
+                "early_lag_multiplier": 4.0,
+                "min_early_dfx": 250.0,
+            },
+            "pow": {"difficulty_bits": 10},
+        }
+    )
+    freeze_params_to_solidity(custom, sol_copy)
+    frozen_text = sol_copy.read_text(encoding="utf-8")
+    assert 'string public constant name = "CustomFlux";' in frozen_text
+    assert "uint256 public constant C_TRANSFER = 950_000_000_000_000_000;" in frozen_text
+    assert "uint8 public constant POW_DIFFICULTY_BITS = 10;" in frozen_text
