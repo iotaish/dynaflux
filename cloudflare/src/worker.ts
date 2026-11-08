@@ -149,17 +149,21 @@ async function verifyDiscordSignature(
 }
 
 /**
- * Formats a WAD/wei bigint to 6 significant digits (equivalent to Python `:.6g`),
- * stripping trailing zeros and prefixing with `≈ ` only when rounding occurs.
+ * Formats a WAD/wei bigint to 6 significant digits:
+ * - Exact numbers with <= 6 significant digits are shown as-is (e.g. `1000`, `0.001`).
+ * - Rounded numbers keep all 6 significant digits (including trailing zeros like `≈ 287.950`)
+ *   so table columns align cleanly.
  */
 function fmt6g(wei: bigint): string {
   const exactStr = formatEther(wei);
   const num = Number(exactStr);
   if (num === 0) return "0";
-  const roundedStr = Number(num.toPrecision(6)).toString();
-  return Number(roundedStr) === num && exactStr.length <= roundedStr.length
-    ? exactStr
-    : `≈ ${roundedStr}`;
+  const prec6 = num.toPrecision(6);
+  const cleanExact = Number(prec6).toString();
+  if (Number(prec6) === num && exactStr.length <= cleanExact.length) {
+    return exactStr;
+  }
+  return `≈ ${prec6}`;
 }
 
 function jsonResponse(payload: unknown): Response {
