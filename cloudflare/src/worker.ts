@@ -312,14 +312,18 @@ export default {
               });
 
               const amountNum = Number(getOption("amount") ?? 0);
-              if (amountNum <= 0) {
-                await patchDiscordFollowup(env.DISCORD_APP_ID, interaction.token, "エラー: 額は正数で指定してください。");
+              if (!Number.isFinite(amountNum) || amountNum <= 0 || amountNum > 1_000_000_000) {
+                await patchDiscordFollowup(
+                  env.DISCORD_APP_ID,
+                  interaction.token,
+                  "エラー: 額は `0 < amount <= 1,000,000,000` の有効な数値で指定してください。"
+                );
                 return;
               }
               const grossWei = parseEther(amountNum.toFixed(6));
 
               if (name === "withdraw") {
-                const toAddressRaw = String(getOption("address") ?? "");
+                const toAddressRaw = String(getOption("address") ?? "").trim();
                 if (!isAddress(toAddressRaw)) {
                   await patchDiscordFollowup(
                     env.DISCORD_APP_ID,
@@ -354,10 +358,18 @@ export default {
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
+                  `⏳ **[外部ウォレット出金: ブロック承認待機中...]**\n` +
+                    `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
+                );
+                await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+
+                await patchDiscordFollowup(
+                  env.DISCORD_APP_ID,
+                  interaction.token,
                   `**[外部ウォレット出金完了]**\n` +
                     `- 送金元 (Discord Vault): \`${callerAddress}\`\n` +
                     `- 送金先: \`${toAddressRaw}\`\n` +
-                    `- 額面 (Gross): \`${amountNum.toFixed(4)} DFX\` → **着金見込 (Net): \`${Number(formatEther(netQuote)).toFixed(6)} DFX\`**\n` +
+                    `- 額面 (Gross): \`${amountNum.toFixed(4)} DFX\` → **着金確定 (Net): \`${Number(formatEther(netQuote)).toFixed(6)} DFX\`**\n` +
                     `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
                 return;
@@ -394,9 +406,17 @@ export default {
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
+                  `⏳ **[オンチェーン送金: ブロック承認待機中...]**\n` +
+                    `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
+                );
+                await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+
+                await patchDiscordFollowup(
+                  env.DISCORD_APP_ID,
+                  interaction.token,
                   `**[オンチェーン送金報告完了]**\n` +
                     `- 移転者: <@${callerId}> → 受領者: <@${recipientUserId}>\n` +
-                    `- 額面 (Gross): \`${amountNum.toFixed(4)} DFX\` → **手取り (Net): \`${Number(formatEther(netQuote)).toFixed(6)} DFX\`**\n` +
+                    `- 額面 (Gross): \`${amountNum.toFixed(4)} DFX\` → **手取り確定 (Net): \`${Number(formatEther(netQuote)).toFixed(6)} DFX\`**\n` +
                     `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
               } else {
@@ -432,9 +452,18 @@ export default {
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
+                  `⏳ **[オンチェーン新規発行: ブロック承認待機中...]**\n` +
+                    `- 軽量PoW突破 (\`nonce=${nonce.toString()}\`, \`${hashes} hashes\`)\n` +
+                    `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
+                );
+                await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+
+                await patchDiscordFollowup(
+                  env.DISCORD_APP_ID,
+                  interaction.token,
                   `**[オンチェーン新規発行 (Mint) 完了]**\n` +
                     `- 受領者: <@${recipientUserId}> (\`${recipientAddress}\`)\n` +
-                    `- 申告額 (Gross): \`${amountNum.toFixed(4)} DFX\` → **発行額 (Net): \`${Number(formatEther(netQuote)).toFixed(6)} DFX\`**\n` +
+                    `- 申告額 (Gross): \`${amountNum.toFixed(4)} DFX\` → **発行確定 (Net): \`${Number(formatEther(netQuote)).toFixed(6)} DFX\`**\n` +
                     `- 軽量PoW: \`nonce=${nonce.toString()}\` (\`${hashes} hashes\`)\n` +
                     `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
