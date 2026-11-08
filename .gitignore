@@ -7,3 +7,4 @@ __pycache__/
 data/
 node_modules/
 .wrangler/
+.relayer-wallet.json
