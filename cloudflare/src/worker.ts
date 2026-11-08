@@ -22,6 +22,7 @@ import {
   keccak256,
   parseAbi,
   parseEther,
+  parseEventLogs,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia, sepolia } from "viem/chains";
@@ -57,6 +58,7 @@ const DYNAFLUX_ABI = parseAbi([
   "function relayer() view returns (address)",
   "function mintTo(address recipient, uint256 grossAmount, uint256 powNonce) returns (uint256 netMinted)",
   "function relayTransfer(address from, address to, uint256 grossAmount) returns (bool)",
+  "event StateTransition(uint256 indexed step, bytes32 indexed prevStateHash, bytes32 indexed newStateHash, uint256 timestamp, address from, address to, uint256 grossAmount, uint256 netAmount, uint256 powNonce, uint256 lateAfter, uint256 earlyAfter)",
 ]);
 
 const POW_TARGET = (1n << 256n) - 1n >> 8n;
@@ -146,6 +148,20 @@ async function verifyDiscordSignature(
   return crypto.subtle.verify("Ed25519", key, hexToBytes(signatureHex), message);
 }
 
+/**
+ * Formats a WAD/wei bigint to 6 significant digits (equivalent to Python `:.6g`),
+ * stripping trailing zeros and prefixing with `≈ ` only when rounding occurs.
+ */
+function fmt6g(wei: bigint): string {
+  const exactStr = formatEther(wei);
+  const num = Number(exactStr);
+  if (num === 0) return "0";
+  const roundedStr = Number(num.toPrecision(6)).toString();
+  return Number(roundedStr) === num && exactStr.length <= roundedStr.length
+    ? exactStr
+    : `≈ ${roundedStr}`;
+}
+
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
     headers: { "Content-Type": "application/json" },
@@ -216,10 +232,9 @@ export default {
           type: 4,
           data: {
             content:
-              `**[オンチェーン資産開示]**\n` +
-              `- ユーザー: <@${targetUserId}>\n` +
-              `- オンチェーンアドレス: \`${targetAddr}\` ([Explorer](${env.EXPLORER_URL}/address/${targetAddr}))\n` +
-              `- 残高: **\`${Number(formatEther(bal)).toFixed(6)} DFX\`** （総流通量: \`${Number(formatEther(supply)).toFixed(4)} DFX\`）`,
+              `**[資産開示]** <@${targetUserId}>\n` +
+              `- 残高: **\`${fmt6g(bal)} DFX\`** （流通量: \`${fmt6g(supply)} DFX\`）\n` +
+              `- Vault: [\`${targetAddr}\`](${env.EXPLORER_URL}/address/${targetAddr})`,
           },
         });
       }
@@ -358,19 +373,18 @@ export default {
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
-                  `⏳ **[外部ウォレット出金: ブロック承認待機中...]**\n` +
-                    `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
+                  `⏳ **出金承認中...** [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
-                await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+                const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+                const logs = parseEventLogs({ abi: DYNAFLUX_ABI, eventName: "StateTransition", logs: receipt.logs });
+                const actualNetWei = logs[0]?.args.netAmount ?? netQuote;
 
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
-                  `**[外部ウォレット出金完了]**\n` +
-                    `- 送金元 (Discord Vault): \`${callerAddress}\`\n` +
-                    `- 送金先: \`${toAddressRaw}\`\n` +
-                    `- 額面 (Gross): \`${amountNum.toFixed(4)} DFX\` → **着金確定 (Net): \`${Number(formatEther(netQuote)).toFixed(6)} DFX\`**\n` +
-                    `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
+                  `**[出金完了]** <@${callerId}> → \`${toAddressRaw}\`\n` +
+                    `- Gross: \`${fmt6g(grossWei)} DFX\` → **Net: \`${fmt6g(actualNetWei)} DFX\`**\n` +
+                    `- Tx: [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
                 return;
               }
@@ -406,18 +420,18 @@ export default {
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
-                  `⏳ **[オンチェーン送金: ブロック承認待機中...]**\n` +
-                    `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
+                  `⏳ **送金承認中...** [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
-                await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+                const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+                const logs = parseEventLogs({ abi: DYNAFLUX_ABI, eventName: "StateTransition", logs: receipt.logs });
+                const actualNetWei = logs[0]?.args.netAmount ?? netQuote;
 
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
-                  `**[オンチェーン送金報告完了]**\n` +
-                    `- 移転者: <@${callerId}> → 受領者: <@${recipientUserId}>\n` +
-                    `- 額面 (Gross): \`${amountNum.toFixed(4)} DFX\` → **手取り確定 (Net): \`${Number(formatEther(netQuote)).toFixed(6)} DFX\`**\n` +
-                    `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
+                  `**[送金完了]** <@${callerId}> → <@${recipientUserId}>\n` +
+                    `- Gross: \`${fmt6g(grossWei)} DFX\` → **Net: \`${fmt6g(actualNetWei)} DFX\`**\n` +
+                    `- Tx: [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
               } else {
                 const { txHash, netQuote, nonce, hashes } = await withConcurrencyRetry(async () => {
@@ -452,20 +466,18 @@ export default {
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
-                  `⏳ **[オンチェーン新規発行: ブロック承認待機中...]**\n` +
-                    `- 軽量PoW突破 (\`nonce=${nonce.toString()}\`, \`${hashes} hashes\`)\n` +
-                    `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
+                  `⏳ **発行承認中...** [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
-                await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+                const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+                const logs = parseEventLogs({ abi: DYNAFLUX_ABI, eventName: "StateTransition", logs: receipt.logs });
+                const actualNetWei = logs[0]?.args.netAmount ?? netQuote;
 
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
-                  `**[オンチェーン新規発行 (Mint) 完了]**\n` +
-                    `- 受領者: <@${recipientUserId}> (\`${recipientAddress}\`)\n` +
-                    `- 申告額 (Gross): \`${amountNum.toFixed(4)} DFX\` → **発行確定 (Net): \`${Number(formatEther(netQuote)).toFixed(6)} DFX\`**\n` +
-                    `- 軽量PoW: \`nonce=${nonce.toString()}\` (\`${hashes} hashes\`)\n` +
-                    `- トランザクション: [\`${txHash.slice(0, 18)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
+                  `**[発行完了]** → <@${recipientUserId}>\n` +
+                    `- Gross: \`${fmt6g(grossWei)} DFX\` → **Net: \`${fmt6g(actualNetWei)} DFX\`** (PoW: \`${hashes}\`)\n` +
+                    `- Tx: [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
               }
             } catch (err) {
