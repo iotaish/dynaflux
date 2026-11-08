@@ -5,3 +5,5 @@ __pycache__/
 *.db*
 .env
 data/
+node_modules/
+.wrangler/

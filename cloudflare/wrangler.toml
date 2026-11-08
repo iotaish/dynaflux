@@ -1,0 +1,15 @@
+name = "dynaflux-discord-worker"
+main = "src/worker.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+# Default: Base Sepolia Testnet (100% Free EVM L2)
+RPC_URL = "https://sepolia.base.org"
+EXPLORER_URL = "https://sepolia.basescan.org"
+# Set after deploying contracts/DynaFluxToken.sol
+CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000"
+
+# Secrets to set via `npx wrangler secret put <NAME>`:
+# - DISCORD_PUBLIC_KEY       (from Discord Developer Portal -> General Information)
+# - DISCORD_APP_ID           (from Discord Developer Portal -> General Information)
+# - RELAYER_PRIVATE_KEY      (0x... private key of the gas-sponsoring testnet wallet)
