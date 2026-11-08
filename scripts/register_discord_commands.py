@@ -100,7 +100,7 @@ def register_commands() -> None:
         headers={
             "Authorization": f"Bot {bot_token}",
             "Content-Type": "application/json",
-            "User-Agent": "DynaFluxBot (https://github.com/iotaish/dynaflux, 0.9.1)",
+            "User-Agent": "DynaFluxBot (https://github.com/iotaish/dynaflux, 0.9.5)",
         },
     )
     with urllib.request.urlopen(req) as resp:
