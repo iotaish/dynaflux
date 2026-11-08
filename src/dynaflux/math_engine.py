@@ -1,29 +1,32 @@
 """
 Deterministic fixed-point mathematics & cryptographic primitives for DynaFlux (DFX).
 Mirrors `contracts/DynaFluxToken.sol` with 100% bit-for-bit integer precision.
+Values default to `config/params.yml` (Single Source of Truth).
 """
 
 import hashlib
 import time
 
+from .config import load_params
+
 WAD: int = 10**18
 
-# Original `token_manage` constants:
-# const = 0.98, gen_dis_rate = 1.6 -> c_transfer = 0.98, c_gen = 0.98 * 1.6 = 1.568
-C_TRANSFER: int = 980_000_000_000_000_000
-C_GEN: int = 1_568_000_000_000_000_000
+_PARAMS = load_params()
 
-# Decay rates:
-# `late` decays to 0.1x over 30 days (2,592,000 seconds)
-LAMBDA_LATE: int = 888_342_958_043
-LAMBDA_EARLY: int = 296_114_319_347
+# Original `token_manage` constants loaded from `config/params.yml`:
+C_TRANSFER: int = _PARAMS.c_transfer_wad()
+C_GEN: int = _PARAMS.c_gen_wad()
+
+# Decay rates loaded from `config/params.yml`:
+LAMBDA_LATE: int = _PARAMS.lambda_late_wad()
+LAMBDA_EARLY: int = _PARAMS.lambda_early_wad()
 
 # Built-in minimum baseline to prevent deadlock after multi-month inactivity
-MIN_EARLY: int = 150 * WAD
+MIN_EARLY: int = _PARAMS.min_early_wad()
 
-# Lightweight Theoretical Proof-of-Work (8 leading zero bits = avg 256 hashes, < 1ms on mobile)
-POW_DIFFICULTY_BITS: int = 8
-POW_TARGET: int = ((1 << 256) - 1) >> POW_DIFFICULTY_BITS
+# Lightweight Theoretical Proof-of-Work
+POW_DIFFICULTY_BITS: int = _PARAMS.pow.difficulty_bits
+POW_TARGET: int = _PARAMS.pow_target()
 
 
 def exp_neg_wad(x: int) -> int:
