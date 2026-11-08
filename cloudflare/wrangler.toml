@@ -9,7 +9,7 @@ CHAIN_ID = "11155111"
 RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com"
 EXPLORER_URL = "https://sepolia.etherscan.io"
 # Set after deploying contracts/DynaFluxToken.sol
-CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000"
+CONTRACT_ADDRESS = "0x5518963068663df44026d589800218dd4647be21"
 
 # Secrets to set via `npx wrangler secret put <NAME>`:
 # - DISCORD_PUBLIC_KEY       (from Discord Developer Portal -> General Information)
