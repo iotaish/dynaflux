@@ -21,11 +21,11 @@ class TokenMetaConfig(BaseModel):
 
 
 class ThermostatConfig(BaseModel):
-    const: float = Field(default=0.98, gt=0.0)
-    gen_dis_rate: float = Field(default=1.6, gt=0.0)
-    decay_to_tenth_days: float = Field(default=30.0, gt=0.0)
-    early_lag_multiplier: float = Field(default=3.0, gt=0.0)
-    min_early_dfx: float = Field(default=150.0, gt=0.0)
+    const: float = Field(default=0.90, gt=0.0)
+    gen_dis_rate: float = Field(default=1.8, gt=0.0)
+    decay_to_tenth_days: float = Field(default=7.0, gt=0.0)
+    early_lag_multiplier: float = Field(default=4.0, gt=0.0)
+    min_early_dfx: float = Field(default=1000.0, gt=0.0)
 
 
 class PowConfig(BaseModel):

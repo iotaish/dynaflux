@@ -1,24 +1,28 @@
 # DynaFlux (DFX) Protocol Parameters (Single Source of Truth)
-# Edit these values to tune the economy with `uv run dynaflux simulate`,
-# then run `uv run dynaflux freeze` to bake them into `contracts/DynaFluxToken.sol`
-# where they become permanently frozen (`immutable` / `constant`) upon deployment.
+# Tuned for active community & Discord economies:
+# - 7-day rapid velocity cooling cycle (`decay_to_tenth_days: 7.0`)
+# - 28-day long-term baseline memory (`early_lag_multiplier: 4.0`)
+# - Two-stage thermostat (`const: 0.90`, `gen_dis_rate: 1.8` -> `c_gen = 1.62`)
+# - 1,000 DFX minimum baseline capacity (`min_early_dfx: 1000.0`)
+#
+# Run `uv run dynaflux freeze` to compile and bake these values into `contracts/DynaFluxToken.sol`.
 
 token:
   name: "DynaFlux"
   symbol: "DFX"
 
 thermostat:
-  # Original `token_manage` WeekSummary.const (base transfer coefficient c)
-  const: 0.98
-  # Original `token_manage` WeekSummary.gen_dis_rate (mint penalty multiplier -> c_gen = const * gen_dis_rate)
-  gen_dis_rate: 1.6
-  # Number of days over which `late` decays to 0.1x (1/10), matching `0.1 ** (dt / 30 days)`
-  decay_to_tenth_days: 30.0
-  # Lag multiplier for `early` reference decay relative to `late`
-  early_lag_multiplier: 3.0
-  # Built-in minimum baseline for `early` in DFX (replaces manual `inut` seeding after idle periods)
-  min_early_dfx: 150.0
+  # Base transfer coefficient c (controls transfer burn curve and transfer cutoff at early / c)
+  const: 0.90
+  # Mint penalty multiplier (c_gen = const * gen_dis_rate = 1.62; minting halts at ~61.7% of early)
+  gen_dis_rate: 1.8
+  # Number of days over which `late` velocity decays to 0.1x (1/10)
+  decay_to_tenth_days: 7.0
+  # Lag multiplier for `early` reference decay relative to `late` (7d * 4 = 28d reference window)
+  early_lag_multiplier: 4.0
+  # Built-in minimum baseline for `early` in DFX (prevents deflationary deadlock after idle periods)
+  min_early_dfx: 1000.0
 
 pow:
-  # Lightweight theoretical Proof-of-Work leading zero bits (8 bits = avg 256 hashes, <1ms on mobile)
+  # Lightweight theoretical Proof-of-Work leading zero bits (8 bits = avg 256 hashes, <1ms on mobile/Worker)
   difficulty_bits: 8

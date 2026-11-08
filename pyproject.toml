@@ -5,7 +5,7 @@ build-backend = "uv_build"
 [project]
 name = "dynaflux"
 version = "0.1.0"
-description = "Autonomous Thermostatic Cryptocurrency & Verifiable Discord Bot evolved from token_manage"
+description = "Autonomous Verifiable Thermostatic Cryptocurrency & Serverless Discord Bot"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

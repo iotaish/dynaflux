@@ -3,12 +3,12 @@ pragma solidity ^0.8.20;
 
 /**
  * @title DynaFluxToken (DFX) - Autonomous Verifiable Thermostatic Currency
- * @notice Faithful O(1) on-chain evolution of the original `token_manage` protocol.
+ * @notice O(1) on-chain thermostatic tokenomics protocol with split-invariance and stateHash audit proofs.
  *
  * Core Mathematical & Cryptographic Properties:
  * 1. Dual-State Thermostatic Engine (`late` & `early`):
- *    - `late`: Current transaction velocity (decays to 0.1x over 30 days, same as original `token_manage`).
- *    - `early`: Baseline historical activity with a built-in ignition floor (`MIN_EARLY`).
+ *    - `late`: Short-term transaction velocity (decays to 0.1x over 7 days).
+ *    - `early`: Long-term baseline activity (28-day lag window) with a built-in ignition floor (`MIN_EARLY`).
  *    - Only post-tax `net` amounts are added to `late`, creating a self-stabilizing feedback loop.
  *
  * 2. Exact Split-Invariance (Path-Independent Taxation):
@@ -50,20 +50,19 @@ contract DynaFluxToken is IERC20 {
     // --- Fixed-Point Constants (WAD = 1e18) ---
     uint256 public constant WAD = 1e18;
 
-    // Original `token_manage` constants:
-    // const = 0.98, gen_dis_rate = 1.6 -> c_transfer = 0.98, c_gen = 0.98 * 1.6 = 1.568
-    uint256 public constant C_TRANSFER = 980_000_000_000_000_000; // 0.98 * 1e18
-    uint256 public constant C_GEN      = 1_568_000_000_000_000_000; // 1.568 * 1e18
+    // Thermostatic coefficients (frozen from config/params.yml):
+    // const = 0.90, gen_dis_rate = 1.8 -> c_transfer = 0.90, c_gen = 0.90 * 1.8 = 1.62
+    uint256 public constant C_TRANSFER = 900_000_000_000_000_000; // 0.98 * 1e18
+    uint256 public constant C_GEN      = 1_620_000_000_000_000_000; // 1.568 * 1e18
 
     // Decay rates:
-    // `late` decays to 0.1x over 30 days (2,592,000 seconds):
-    // lambda_late = ln(10) / 2,592,000 ≈ 8.88342958e-7 * 1e18 = 888_342_958_043
-    uint256 public constant LAMBDA_LATE  = 888_343_014_272;
-    // `early` tracks the long-term 30-day reference window (decays 3x slower to retain 30d history):
-    uint256 public constant LAMBDA_EARLY = 296_114_338_091;
+    // `late` decays to 0.1x over 7 days (604,800 seconds):
+    uint256 public constant LAMBDA_LATE  = 3_807_184_346_882;
+    // `early` tracks the long-term 28-day reference window (decays 4x slower):
+    uint256 public constant LAMBDA_EARLY = 951_796_086_720;
 
-    // Minimum ignition floor for `early` (replaces manual `inut` seeding after long idle periods)
-    uint256 public constant MIN_EARLY = 150_000_000_000_000_000_000;
+    // Minimum baseline floor for `early` to prevent deflationary deadlock after long idle periods
+    uint256 public constant MIN_EARLY = 1_000_000_000_000_000_000_000;
 
     // --- Thermostatic & Cryptographic Proof State ---
     uint256 public lateState;
@@ -154,7 +153,7 @@ contract DynaFluxToken is IERC20 {
         return res;
     }
 
-    // --- Core `token_manage` Mathematics ---
+    // --- Core Thermostatic Mathematics ---
 
     /**
      * @notice Returns the current decayed (late, early) values at `block.timestamp`.
@@ -275,7 +274,7 @@ contract DynaFluxToken is IERC20 {
     }
 
     /**
-     * @notice Anonymous generation/minting (equivalent to `transferor == ""` in `token_manage`).
+     * @notice Anonymous PoW-guarded generation/minting.
      * @param grossAmount Declared gross effort/amount.
      * @param powNonce Solution to the lightweight PoW puzzle bound to `stateHash`.
      */
