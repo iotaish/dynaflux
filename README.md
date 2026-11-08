@@ -59,6 +59,8 @@ $$\text{stateHash}_n = H\left(\text{stateHash}_{n-1} \parallel t_n \parallel \te
 
 ```text
 dynaflux/
+├── config/
+│   └── params.yml                     # トークノミクス・PoW パラメータ設定ファイル (SSOT)
 ├── contracts/
 │   └── DynaFluxToken.sol              # Base Sepolia 等にデプロイする自律型 ERC-20 コントラクト
 ├── cloudflare/                        # 完全無料・24時間稼働の Cloudflare Workers Discord Bot
@@ -68,8 +70,9 @@ dynaflux/
 │   ├── tsconfig.json
 │   └── wrangler.toml
 ├── src/
-│   └── dynaflux/                      # Python 決定論的エンジン・ローカル Discord Bot・CLI
+│   └── dynaflux/                      # Python 決定論的エンジン・YAML コンパイラ・CLI
 │       ├── __init__.py
+│       ├── config.py                  # params.yml 読み込み & Solidity 定数フリーズ機構
 │       ├── math_engine.py
 │       ├── ledger.py
 │       ├── bot.py
@@ -82,16 +85,21 @@ dynaflux/
 └── pyproject.toml
 ```
 
-## 3. ローカル検証・シミュレーション
+## 3. ローカル検証・パラメータ調整とコントラクトへのフリーズ
+
+`config/params.yml` で係数（`const`, `gen_dis_rate`, 減衰日数 `decay_to_tenth_days`, `min_early_dfx`, `difficulty_bits`）を自由に編集・実験し、確定した値を `uv run dynaflux freeze` でスマートコントラクト（`contracts/DynaFluxToken.sol`）の `constant` 定数へ焼き込んで永久フリーズできます。
 
 ```sh
 # 依存パッケージの同期
 uv sync
 
-# シミュレーション & 改竄検知デモの実行
+# 1. config/params.yml の値でシミュレーション & 改竄検知デモを実行
 uv run dynaflux simulate
 
-# Lint・フォーマット・型検査・単体テストの一括実行
+# 2. 調整した config/params.yml の値を contracts/DynaFluxToken.sol に焼き込む（フリーズ準備）
+uv run dynaflux freeze
+
+# 3. Lint・フォーマット・型検査・単体テストの一括実行
 uv run ruff check && uv run pyright && uv run pytest
 ```
 

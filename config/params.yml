@@ -1,0 +1,24 @@
+# DynaFlux (DFX) Protocol Parameters (Single Source of Truth)
+# Edit these values to tune the economy with `uv run dynaflux simulate`,
+# then run `uv run dynaflux freeze` to bake them into `contracts/DynaFluxToken.sol`
+# where they become permanently frozen (`immutable` / `constant`) upon deployment.
+
+token:
+  name: "DynaFlux"
+  symbol: "DFX"
+
+thermostat:
+  # Original `token_manage` WeekSummary.const (base transfer coefficient c)
+  const: 0.98
+  # Original `token_manage` WeekSummary.gen_dis_rate (mint penalty multiplier -> c_gen = const * gen_dis_rate)
+  gen_dis_rate: 1.6
+  # Number of days over which `late` decays to 0.1x (1/10), matching `0.1 ** (dt / 30 days)`
+  decay_to_tenth_days: 30.0
+  # Lag multiplier for `early` reference decay relative to `late`
+  early_lag_multiplier: 3.0
+  # Built-in minimum baseline for `early` in DFX (replaces manual `inut` seeding after idle periods)
+  min_early_dfx: 150.0
+
+pow:
+  # Lightweight theoretical Proof-of-Work leading zero bits (8 bits = avg 256 hashes, <1ms on mobile)
+  difficulty_bits: 8

@@ -7,10 +7,48 @@ from pathlib import Path
 
 import typer
 
+from .config import (
+    DEFAULT_CONFIG_PATH,
+    DEFAULT_CONTRACT_PATH,
+    freeze_params_to_solidity,
+    load_params,
+)
 from .ledger import Ledger
 from .math_engine import WAD
 
 app = typer.Typer(help="DynaFlux (DFX) - Autonomous Verifiable Thermostatic Currency CLI")
+
+
+@app.command()
+def freeze(
+    config_path: Path = DEFAULT_CONFIG_PATH,
+    contract_path: Path = DEFAULT_CONTRACT_PATH,
+) -> None:
+    """
+    Compile parameters from `config/params.yml` into 18-decimal WAD integers and
+    freeze them into `contracts/DynaFluxToken.sol`.
+    """
+    params = load_params(config_path)
+    out = freeze_params_to_solidity(params, contract_path)
+    typer.echo(f"Frozen parameters from {config_path} -> {out}:")
+    typer.echo(f"  TOKEN:        {params.token.name} ({params.token.symbol})")
+    typer.echo(f"  C_TRANSFER:   {params.c_transfer_wad():_} ({params.thermostat.const})")
+    typer.echo(
+        f"  C_GEN:        {params.c_gen_wad():_} "
+        f"({params.thermostat.const} * {params.thermostat.gen_dis_rate})"
+    )
+    typer.echo(
+        f"  LAMBDA_LATE:  {params.lambda_late_wad():_} "
+        f"(0.1x over {params.thermostat.decay_to_tenth_days} days)"
+    )
+    typer.echo(
+        f"  LAMBDA_EARLY: {params.lambda_early_wad():_} "
+        f"(lag x{params.thermostat.early_lag_multiplier})"
+    )
+    typer.echo(
+        f"  MIN_EARLY:    {params.min_early_wad():_} ({params.thermostat.min_early_dfx} DFX)"
+    )
+    typer.echo(f"  POW_BITS:     {params.pow.difficulty_bits} bits")
 
 
 @app.command()
