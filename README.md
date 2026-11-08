@@ -1,5 +1,9 @@
 # DynaFlux (DFX) — Autonomous Verifiable Thermostatic Currency
 
+<p align="center">
+  <img src="assets/bot_icon.png" alt="DynaFlux Logo" width="180" />
+</p>
+
 DynaFlux (DFX) は、2つの時間スケールの指数減衰状態（`late` と `early`）によって通貨の発行量と移転税率を自律制御する、**完全な分割不変性（Path-Independent Split-Invariance）** と **暗号学的無改竄証明（`stateHash` 監査チェーン + 軽量 Proof-of-Work）** を備えた $O(1)$ サーモスタット暗号資産プロトコルです。
 
 **完全 0 円・サーバーレス・24 時間稼働** で、Ethereum Sepolia（または任意の EVM チェーン）上のスマートコントラクト（`contracts/DynaFluxToken.sol`）と **Cloudflare Workers** 上の Discord Bot（`cloudflare/`）を直結して運用できます。MetaMask アプリやブラウザの Remix IDE を使わずに CLI だけで鍵生成・コンパイル・デプロイが完結し、外部ウォレットへの直接出金（`/withdraw`）にも対応しています。
