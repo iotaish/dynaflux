@@ -94,7 +94,15 @@ contract DynaFluxToken is IERC20 {
         uint256 earlyAfter
     );
 
-    constructor() {
+    // --- Relayer Support for Serverless Discord Bot (Cloudflare Workers) ---
+    // Optional trusted relayer address set at deployment (address(0) if unused).
+    // Allows a stateless Cloudflare Worker to sponsor testnet/L2 gas on behalf of Discord users
+    // whose deterministic on-chain addresses do not hold native ETH, while preserving every single
+    // thermostatic, split-invariance, PoW, and stateHash audit rule.
+    address public immutable relayer;
+
+    constructor(address initialRelayer) {
+        relayer = initialRelayer;
         lastUpdateTimestamp = block.timestamp;
         earlyState = MIN_EARLY;
         lateState = 0;
@@ -272,19 +280,56 @@ contract DynaFluxToken is IERC20 {
      * @param powNonce Solution to the lightweight PoW puzzle bound to `stateHash`.
      */
     function mint(uint256 grossAmount, uint256 powNonce) external returns (uint256 netMinted) {
+        return _mintTo(msg.sender, grossAmount, powNonce);
+    }
+
+    /**
+     * @notice Gas-sponsored minting to `recipient` (callable by anyone who solves the PoW for `recipient`).
+     * @dev Because PoW binds to `recipient` and `stateHash`, anyone (including a Cloudflare Worker relayer)
+     *      can submit the transaction and pay gas on behalf of a Discord user or MetaMask address.
+     */
+    function mintTo(
+        address recipient,
+        uint256 grossAmount,
+        uint256 powNonce
+    ) external returns (uint256 netMinted) {
+        return _mintTo(recipient, grossAmount, powNonce);
+    }
+
+    function _mintTo(
+        address recipient,
+        uint256 grossAmount,
+        uint256 powNonce
+    ) internal returns (uint256 netMinted) {
+        require(recipient != address(0), "DFX: mint to zero address");
         require(grossAmount > 0, "DFX: amount must be positive");
-        require(verifyPow(msg.sender, grossAmount, powNonce), "DFX: invalid PoW nonce");
+        require(verifyPow(recipient, grossAmount, powNonce), "DFX: invalid PoW nonce");
 
         (uint256 late, uint256 early) = currentSummary();
         netMinted = _computeNet(grossAmount, late, early, true);
         require(netMinted > 0, "DFX: thermal capacity exhausted (net is 0)");
 
-        _commitTransition(address(0), msg.sender, grossAmount, netMinted, powNonce, late, early);
+        _commitTransition(address(0), recipient, grossAmount, netMinted, powNonce, late, early);
 
         _totalSupply += netMinted;
-        _balances[msg.sender] += netMinted;
+        _balances[recipient] += netMinted;
 
-        emit Transfer(address(0), msg.sender, netMinted);
+        emit Transfer(address(0), recipient, netMinted);
+    }
+
+    /**
+     * @notice Gas-sponsored transfer executed by the configured Discord Bot relayer.
+     * @dev Allows Discord users to transfer from their deterministic Discord vault address
+     *      to another Discord user or out to an external MetaMask wallet with zero ETH gas required.
+     */
+    function relayTransfer(
+        address from,
+        address to,
+        uint256 grossAmount
+    ) external returns (bool) {
+        require(msg.sender == relayer, "DFX: caller is not relayer");
+        _transferWithThermalBurn(from, to, grossAmount);
+        return true;
     }
 
     function approve(address spender, uint256 value) external override returns (bool) {
