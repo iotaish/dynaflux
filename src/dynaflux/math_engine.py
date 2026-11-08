@@ -13,7 +13,7 @@ WAD: int = 10**18
 
 _PARAMS = load_params()
 
-# Original `token_manage` constants loaded from `config/params.yml`:
+# Thermostat coefficients loaded from `config/params.yml`:
 C_TRANSFER: int = _PARAMS.c_transfer_wad()
 C_GEN: int = _PARAMS.c_gen_wad()
 

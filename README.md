@@ -1,6 +1,6 @@
 # DynaFlux (DFX) — Autonomous Verifiable Thermostatic Currency
 
-DynaFlux (DFX) は、Silvio Gesell の自由貨幣論（減価・流通速度制御）と元の `token_manage` プロトコルの数理モデルを、**完全な分割不変性（Path-Independent Split-Invariance）** と **暗号学的無改竄証明（`stateHash` 監査チェーン + 軽量 Proof-of-Work）** を備えた $O(1)$ 自律型プロトコルへと進化させた実装です。
+DynaFlux (DFX) は、Silvio Gesell の自由貨幣論（減価・流通速度制御）に着想を得て設計された、**完全な分割不変性（Path-Independent Split-Invariance）** と **暗号学的無改竄証明（`stateHash` 監査チェーン + 軽量 Proof-of-Work）** を備えた $O(1)$ 自律型サーモスタット暗号資産プロトコルです。
 
 **完全 0 円・サーバーレス・24 時間稼働** で、無料テストネット（Base Sepolia 等）上のスマートコントラクト（`contracts/DynaFluxToken.sol`）と **Cloudflare Workers** 上の Discord Bot（`cloudflare/`）を直結して運用できます。もちろん MetaMask 等の外部ウォレットへの直接出金（`/withdraw`）にも対応しています。
 
@@ -22,18 +22,18 @@ DynaFlux (DFX) は、Silvio Gesell の自由貨幣論（減価・流通速度制
 
 ### 1.1. 2変数サーモスタット状態 (`late` と `early`)
 
-過去の全履歴を毎回走査する $O(N)$ 計算を廃し、経過時間 $\Delta t$ に応じた指数減衰で更新される 2 つの状態変数 `late`（直近熱量：30日で $0.1$ 倍に減衰）と `early`（基準熱量：30日ラグ基準値＋最低着火値 `MIN_EARLY = 150 DFX`）を保持します。
+過去の全履歴を毎回走査する $O(N)$ 計算を廃し、経過時間 $\Delta t$ に応じた指数減衰で更新される 2 つの状態変数 `late`（直近熱量：7日で $0.1$ 倍に減衰）と `early`（基準熱量：28日ラグ基準値＋最低着火値 `MIN_EARLY = 1,000 DFX`）を保持します。
 
 1. 減衰関数 `expNegWad` には区間縮小つき有理関数近似（パデ型逆数近似）を採用しており、何ヶ月取引が途絶えてもテイラー展開のようなゼロ落ち破綻や振動を起こしません。
-1. 取引や新規発行が行われると、元の `token_manage` と同じく **税引き後の手取り額（`net`）のみ** が熱量状態に加算されます。
+1. 取引や新規発行が行われると、**税引き後の手取り額（`net`）のみ** が熱量状態に加算され、自律的な負のフィードバックループを形成します。
 
 ### 1.2. 分割不変性（一気に送っても小分けにしても総課税量が不変）
 
-元の `token_manage` における限界受取率
+熱量余力に基づく限界受取率
 
 $$\frac{d(\text{net})}{d(\text{gross})} = \frac{\max(\text{early} - c \cdot (\text{late} + \text{net}),\ 0)}{\text{early}}$$
 
-を厳密積分した閉形式解を採用しています（通常移転時は $c = 0.98$、新規発行時は $c = 0.98 \times 1.6 = 1.568$）。
+を厳密積分した閉形式解を採用しています（通常移転時は $c = 0.90$、新規発行時は $c = 0.90 \times 1.8 = 1.62$）。
 
 $$\text{net}(\text{gross}) = \frac{\max(\text{early} - c \cdot \text{late},\ 0)}{c} \times \left(1 - \exp\left(-\frac{c \cdot \text{gross}}{\text{early}}\right)\right)$$
 
@@ -47,7 +47,7 @@ $$\text{net}(\text{gross}) = \frac{\max(\text{early} - c \cdot \text{late},\ 0)}
 1. **100% 焼却（特権・中央金庫なし）**:
    - 徴収された税金（$\text{gross} - \text{net}$）はすべて消滅（Burn）します。オーナー権限や `stakingPool` / `treasury` による中抜きは一切存在しません。
 1. **スマホ対応の超軽量理論 PoW**:
-   - 新規発行（元の `transferor == ""` 報告）時は、最新の `stateHash` に束縛された軽量 PoW パズル（先頭 8 ビットゼロ、スマホや Worker で 1 ミリ秒未満）を解くことで、誰でも匿名・平等に発行できます。
+   - 新規発行時は、最新の `stateHash` に束縛された軽量 PoW パズル（先頭 8 ビットゼロ、スマホや Worker で 1 ミリ秒未満）を解くことで、誰でも匿名・平等に発行できます。
 
 ### 1.4. 計算の無改竄証明 (`stateHash` 監査チェーン)
 
