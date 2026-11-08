@@ -1,7 +1,7 @@
 """
 Discord Slash-Command Bot for DynaFlux (DFX).
-Replicates the original `token_manage` Colab workflow (Report, Balance, Summary)
-plus instant public cryptographic audit (`/verify`).
+Provides thermostatic token operations (/report, /balance, /summary)
+and instant public cryptographic audit (/verify).
 """
 
 import os
@@ -116,7 +116,7 @@ def build_bot(ledger_path: Path | None = None) -> DynaFluxBot:
         now = int(time.time())
         late_dfx, early_dfx = bot.ledger.summary(now)
         table = bot.ledger.quote_table(now, is_gen=is_gen, rows=8)
-        mode_label = "新規発行 (c=1.568)" if is_gen else "通常移転 (c=0.98)"
+        mode_label = "新規発行 (c=1.62)" if is_gen else "通常移転 (c=0.90)"
         table_lines = "\n".join(f"{g:10.4f} -> {n:10.6f}" for g, n in table)
         await interaction.response.send_message(
             f"**[取得額サマリー ({mode_label})]**\n"

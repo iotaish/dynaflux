@@ -211,7 +211,7 @@ export default {
           type: 4,
           data: {
             content:
-              `**[オンチェーン取得額サマリー (${isGen ? "新規発行 c=1.568" : "通常移転 c=0.98"})]**\n` +
+              `**[オンチェーン取得額サマリー (${isGen ? "新規発行 c=1.62" : "通常移転 c=0.90"})]**\n` +
               `- 基準熱量 (\`early\`): \`${earlyDfx.toFixed(4)} DFX\`\n` +
               `- 直近熱量 (\`late\`):  \`${lateDfx.toFixed(4)} DFX\`\n` +
               `\`\`\`text\n     gross ->        net\n${rows.join("\n")}\n\`\`\``,

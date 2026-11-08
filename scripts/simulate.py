@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DynaFlux (DFX) - Faithful `token_manage` Evolution & Public Audit Verifier
+DynaFlux (DFX) - Thermostatic Tokenomics Simulator & Public Audit Verifier
 Verifies:
 1. Exact Split-Invariance: sending 300 DFX in 1 tx vs 2, 10, 100 txs produces the same net & tax.
 2. Pure Lightweight PoW Minting (no cooldown rate limit) + Thermal Cutoff saturation.
@@ -303,16 +303,16 @@ def run_verifications():
     eng = DynaFluxEngine()
     t = eng.last_timestamp
 
-    for i, gross in enumerate([30.0, 50.0, 100.0, 10_000_000.0], 1):
-        pow_nonce, ms = solve_lightweight_pow(eng.state_hash, "ishp", int(gross * WAD))
-        net = eng.mint("ishp", gross, t)
+    for i, gross in enumerate([100.0, 200.0, 400.0, 10_000_000.0], 1):
+        pow_nonce, ms = solve_lightweight_pow(eng.state_hash, "alice", int(gross * WAD))
+        net = eng.mint("alice", gross, t)
         print(
             f"  Mint #{i} (Declared: {gross:12,.1f} DFX) -> Minted Net: {net:8.4f} DFX "
             f"| PoW={ms:.2f}ms | stateHash={eng.state_hash.hex()[:12]}..."
         )
 
     t += 3600
-    eng.transfer("ishp", "daiki", 40.0, t)
+    eng.transfer("alice", "bob", 40.0, t)
 
     is_valid = verify_audit_log(eng.genesis_timestamp, eng.audit_log, eng.state_hash)
     print(

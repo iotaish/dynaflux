@@ -45,11 +45,9 @@ def test_split_invariance_transfer() -> None:
         results.append((net_sum, tax_sum))
 
     base_net, base_tax = results[0]
-    # 1x and 2x match to 1e-6; 50x matches within 0.02% fixed-point rounding
-    assert results[1][0] == pytest.approx(base_net, rel=1e-6)
-    for net_sum, tax_sum in results[2:]:
-        assert net_sum == pytest.approx(base_net, rel=2e-4)
-        assert tax_sum == pytest.approx(base_tax, rel=2e-4)
+    for net_sum, tax_sum in results[1:]:
+        assert net_sum == pytest.approx(base_net, rel=2e-6)
+        assert tax_sum == pytest.approx(base_tax, rel=2e-5)
 
 
 def test_pow_mint_saturation_and_cutoff() -> None:
@@ -58,13 +56,13 @@ def test_pow_mint_saturation_and_cutoff() -> None:
     t = 1_700_000_000
     max_theoretical_dfx = MIN_EARLY / C_GEN
 
-    rec, _ = ledger.mint("ishp", 10_000_000.0, t)
+    rec, _ = ledger.mint("alice", 10_000_000.0, t)
     minted_dfx = rec.net_wad / WAD
     assert minted_dfx == pytest.approx(max_theoretical_dfx, rel=1e-4)
 
     # Immediately trying to mint again hits thermal cutoff (net == 0 -> ValueError)
     with pytest.raises(ValueError, match="Thermal capacity exhausted"):
-        ledger.mint("ishp", 100.0, t)
+        ledger.mint("alice", 100.0, t)
 
 
 def test_cryptographic_audit_and_tamper_detection(tmp_path: Path) -> None:
@@ -73,11 +71,11 @@ def test_cryptographic_audit_and_tamper_detection(tmp_path: Path) -> None:
     ledger = Ledger(genesis_timestamp=1_700_000_000, storage_path=db_file)
     t = 1_700_000_000
 
-    ledger.mint("ishp", 40.0, t)
+    ledger.mint("alice", 40.0, t)
     t += 600
-    ledger.mint("daiki", 50.0, t)
+    ledger.mint("bob", 50.0, t)
     t += 1200
-    ledger.transfer("ishp", "daiki", 10.0, t)
+    ledger.transfer("alice", "bob", 10.0, t)
 
     res = ledger.verify()
     assert res.valid is True
@@ -97,8 +95,8 @@ def test_cryptographic_audit_and_tamper_detection(tmp_path: Path) -> None:
 def test_yaml_params_and_solidity_freeze(tmp_path: Path) -> None:
     """Parameters loaded from YAML compile to WAD and freeze cleanly into Solidity source."""
     params = load_params()
-    assert params.c_transfer_wad() == 980_000_000_000_000_000
-    assert params.c_gen_wad() == 1_568_000_000_000_000_000
+    assert params.c_transfer_wad() == 900_000_000_000_000_000
+    assert params.c_gen_wad() == 1_620_000_000_000_000_000
 
     sol_copy = tmp_path / "DynaFluxToken.sol"
     orig_sol = Path(__file__).resolve().parents[1] / "contracts" / "DynaFluxToken.sol"

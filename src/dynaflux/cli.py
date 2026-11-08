@@ -86,15 +86,15 @@ def simulate() -> None:
     ledger = Ledger(genesis_timestamp=1_700_000_000)
     t = ledger.snapshot.last_timestamp
 
-    for i, gross in enumerate([30.0, 50.0, 100.0, 10_000_000.0], 1):
-        rec, ms = ledger.mint("ishp", gross, t)
+    for i, gross in enumerate([100.0, 200.0, 400.0, 10_000_000.0], 1):
+        rec, ms = ledger.mint("alice", gross, t)
         print(
             f"  Mint #{i} (Declared: {gross:12,.1f} DFX) -> Minted Net: {rec.net_wad / WAD:8.4f} DFX "
             f"| PoW={ms:.2f}ms | stateHash={rec.new_state_hash[:12]}..."
         )
 
     t += 3600
-    ledger.transfer("ishp", "daiki", 40.0, t)
+    ledger.transfer("alice", "bob", 40.0, t)
 
     audit = ledger.verify()
     print(f"\n  [Public Audit Verifier] Validated {audit.checked_steps} transitions: {audit.valid}")
