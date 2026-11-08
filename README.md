@@ -26,7 +26,7 @@ DynaFlux (DFX) は、2つの時間スケールの指数減衰状態（`late` と
 
 ### 1.1. 2変数サーモスタット状態 (`late` と `early`)
 
-過去の全履歴を毎回走査する $O(N)$ 計算を廃し、経過時間 $\Delta t$ に応じた指数減衰で更新される 2 つの状態変数 `late`（直近熱量：7日で $0.1$ 倍に減衰）と `early`（基準熱量：28日ラグ基準値＋最低着火値 `MIN_EARLY = 1,000 DFX`）を保持します。
+過去の全履歴を毎回走査する $O(N)$ 計算を廃し、経過時間 $\Delta t$ に応じた指数減衰で更新される 2 つの状態変数 `late`（直近熱量：7日で 0.1 倍に減衰）と `early`（基準熱量：28日ラグ基準値＋最低着火値 `MIN_EARLY = 1,000 DFX`）を保持します。
 
 1. 減衰関数 `expNegWad` には区間縮小つき有理関数近似（パデ型逆数近似）を採用しており、何ヶ月取引が途絶えてもテイラー展開のようなゼロ落ち破綻や振動を起こしません。
 1. 取引や新規発行が行われると、**税引き後の手取り額（`net`）のみ** が熱量状態に加算され、自律的な負のフィードバックループを形成します。
@@ -37,25 +37,25 @@ DynaFlux (DFX) は、2つの時間スケールの指数減衰状態（`late` と
 
 $$\frac{d(\text{net})}{d(\text{gross})} = \frac{\max(\text{early} - c \cdot (\text{late} + \text{net}),\ 0)}{\text{early}}$$
 
-を厳密積分した閉形式解を採用しています（通常移転時は $c = 0.90$、新規発行時は $c = 0.90 \times 1.8 = 1.62$）。
+を厳密積分した閉形式解を採用しています（通常移転時は $c = 0.90$ 、新規発行時は $c = 0.90 \times 1.8 = 1.62$ ）。
 
 $$\text{net}(\text{gross}) = \frac{\max(\text{early} - c \cdot \text{late},\ 0)}{c} \times \left(1 - \exp\left(-\frac{c \cdot \text{gross}}{\text{early}}\right)\right)$$
 
 1. **完全な分割不変性**:
-   - 同一時刻において額面 $X$ を 1 回で送っても、$X = x_1 + x_2 + \dots + x_n$ のように何十回に小分けして送っても、受け取れる $\sum \text{net}_i$ と焼却される税金総額 $\sum (\text{gross}_i - \text{net}_i)$ が数学的に一致します。
+   - 同一時刻において額面 $X$ を 1 回で送っても、 $X = x_1 + x_2 + \dots + x_n$ のように何十回に小分けにして送っても、受け取れる $\sum \text{net}_i$ と焼却される税金総額 $\sum (\text{gross}_i - \text{net}_i)$ が数学的に一致します。
 1. **2段階サーモスタット上限（発行遮断と移転遮断の分離）**:
-   - 直近熱量 `late` が `early` の約 $61.7\%$（$1 / 1.62$）に達すると新規発行（Mint）の手取りが `0` となって自動的に停止し、既存トークンの移転（$c = 0.90$）のみが `early` の約 $111.1\%$ まで継続可能となります。
+   - 直近熱量 `late` が `early` の約 61.7% （ $1 / 1.62$ ）に達すると新規発行（Mint）の手取りが `0` となって自動的に停止し、既存トークンの移転（ $c = 0.90$ ）のみが `early` の約 111.1% まで継続可能となります。
 
 ### 1.3. 100% Pure Burn と軽量 Proof-of-Work (PoW) 発行
 
 1. **100% 焼却（特権・中央金庫なし）**:
-   - 徴収された税金（$\text{gross} - \text{net}$）はすべて消滅（Burn）します。オーナー権限や `stakingPool` / `treasury` による中抜きは一切存在しません。
+   - 徴収された税金（ $\text{gross} - \text{net}$ ）はすべて消滅（Burn）します。オーナー権限や `stakingPool` / `treasury` による中抜きは一切存在しません。
 1. **スマホ対応の超軽量理論 PoW**:
    - 新規発行時は、最新の `stateHash` に束縛された軽量 PoW パズル（先頭 8 ビットゼロ、スマホや Worker で 1 ミリ秒未満）を解くことで、時間クールダウン制限なしで誰でも匿名・平等に発行できます。
 
 ### 1.4. 計算の無改竄証明 (`stateHash` 監査チェーン)
 
-すべての状態遷移（ステップ $n$）は、直前の状態ハッシュ $\text{stateHash}_{n-1}$ とすべての入出力パラメータを暗号学的ハッシュで連鎖させます。
+すべての状態遷移（ステップ $n$ ）は、直前の状態ハッシュ $\text{stateHash}_{n-1}$ とすべての入出力パラメータを暗号学的ハッシュで連鎖させます。
 
 $$\text{stateHash}_n = H\left(\text{stateHash}_{n-1} \parallel t_n \parallel \text{sender}_n \parallel \text{recipient}_n \parallel \text{gross}_n \parallel \text{net}_n \parallel \text{powNonce}_n \parallel \text{late}_n \parallel \text{early}_n\right)$$
 
