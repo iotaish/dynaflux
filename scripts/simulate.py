@@ -56,9 +56,11 @@ def compute_summary(late_state: int, early_state: int, last_ts: int, now: int) -
     d_early = exp_neg_wad(LAMBDA_EARLY * dt)
 
     late = (late_state * d_late) // WAD
-    matured = ((late_state - late) * d_early) // WAD if late_state > late else 0
-    decayed_early = (early_state * d_early) // WAD + matured
-    early = max(MIN_EARLY, decayed_early)
+    late_at_early_rate = (late_state * d_early) // WAD
+    matured = late_at_early_rate - late if late_at_early_rate > late else 0
+
+    early_excess = early_state - MIN_EARLY if early_state > MIN_EARLY else 0
+    early = MIN_EARLY + (early_excess * d_early) // WAD + matured
     return late, early
 
 

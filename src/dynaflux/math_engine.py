@@ -64,15 +64,22 @@ def compute_summary(
     last_timestamp: int,
     current_timestamp: int,
 ) -> tuple[int, int]:
-    """Returns the decayed (late, early) state in WAD at `current_timestamp`."""
+    """
+    Returns the decayed (late, early) state in WAD at `current_timestamp`.
+    Satisfies exact time-step associativity (semigroup property over dt):
+      L(dt) = L_0 * d_late(dt)
+      E(dt) = MIN_EARLY + (E_0 - MIN_EARLY) * d_early(dt) + L_0 * (d_early(dt) - d_late(dt))
+    """
     dt = max(0, current_timestamp - last_timestamp)
     d_late = exp_neg_wad(LAMBDA_LATE * dt)
     d_early = exp_neg_wad(LAMBDA_EARLY * dt)
 
     late = (late_state * d_late) // WAD
-    matured = ((late_state - late) * d_early) // WAD if late_state > late else 0
-    decayed_early = (early_state * d_early) // WAD + matured
-    early = max(MIN_EARLY, decayed_early)
+    late_at_early_rate = (late_state * d_early) // WAD
+    matured = late_at_early_rate - late if late_at_early_rate > late else 0
+
+    early_excess = early_state - MIN_EARLY if early_state > MIN_EARLY else 0
+    early = MIN_EARLY + (early_excess * d_early) // WAD + matured
     return late, early
 
 

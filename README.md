@@ -118,7 +118,7 @@ uv run ruff check && uv run pyright && uv run pytest
 
 この構成では、**ブロックチェーン（Ethereum Sepolia テストネット）自体が世界中に分散複製された永久無料のデータベース**となり、**Cloudflare Workers（無料枠）が 24 時間 365 日稼働する Discord の窓口**になります。参加メンバーはスマホの Discord アプリだけで利用でき、何もインストールする必要はありません。
 
-- **稼働中コントラクト (Ethereum Sepolia)**: [`0x5518963068663df44026d589800218dd4647be21`](https://sepolia.etherscan.io/address/0x5518963068663df44026d589800218dd4647be21)
+- **稼働中コントラクト (Ethereum Sepolia)**: [`0xa3718990f03078abc3c3673a52b4e45f48ed9604`](https://sepolia.etherscan.io/address/0xa3718990f03078abc3c3673a52b4e45f48ed9604)
 
 ### 4.1. Step 1: テストネットへのコントラクト自動デプロイ（MetaMask・Remix 不要）
 
