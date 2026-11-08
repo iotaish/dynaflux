@@ -63,10 +63,15 @@ $$\text{stateHash}_n = H\left(\text{stateHash}_{n-1} \parallel t_n \parallel \te
 
 ```text
 dynaflux/
+├── assets/
+│   ├── bot_icon.png                   # Discord Bot アイコン・ブランドエンブレム
+│   └── pv.mp4                         # プロモーションビデオ (16:9, 10s)
 ├── config/
 │   └── params.yml                     # トークノミクス・PoW パラメータ設定ファイル (SSOT)
 ├── contracts/
 │   └── DynaFluxToken.sol              # EVM チェーンにデプロイする自律型 ERC-20 コントラクト
+├── docs/
+│   └── promo_and_profile.md           # Bot プロフィール定義 & PV 生成プロンプト
 ├── cloudflare/                        # 完全無料・24時間稼働の Cloudflare Workers Discord Bot
 │   ├── scripts/
 │   │   └── deploy_contract.ts         # MetaMask・Remix 不要の自動鍵生成・コンパイル・デプロイツール
