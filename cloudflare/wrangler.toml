@@ -3,9 +3,11 @@ main = "src/worker.ts"
 compatibility_date = "2025-01-01"
 
 [vars]
-# Default: Base Sepolia Testnet (100% Free EVM L2)
-RPC_URL = "https://sepolia.base.org"
-EXPLORER_URL = "https://sepolia.basescan.org"
+# Default: Ethereum Sepolia Testnet (Free Faucets without 0.001 ETH requirement)
+# (For Base Sepolia, set CHAIN_ID = "84532", RPC_URL = "https://sepolia.base.org", EXPLORER_URL = "https://sepolia.basescan.org")
+CHAIN_ID = "11155111"
+RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com"
+EXPLORER_URL = "https://sepolia.etherscan.io"
 # Set after deploying contracts/DynaFluxToken.sol
 CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000"
 
