@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "dynaflux"
-version = "0.9.1"
+version = "0.9.5"
 description = "Autonomous Verifiable Thermostatic Cryptocurrency & Serverless Discord Bot"
 readme = "README.md"
 requires-python = ">=3.12"

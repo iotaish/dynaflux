@@ -249,29 +249,29 @@ export default {
         const lateDfx = Number(formatEther(late));
         const earlyDfx = Number(formatEther(early));
         const maxGross = Math.max(lateDfx, earlyDfx) * 2;
-        const sampleGrosses = Array.from({ length: 6 }, (_, idx) => (maxGross / 6) * (idx + 1));
+        const sampleGrosses = Array.from({ length: 6 }, (_, idx) =>
+          parseEther(((maxGross / 6) * (idx + 1)).toFixed(6))
+        );
         const quotes = await Promise.all(
-          sampleGrosses.map((g) =>
+          sampleGrosses.map((gWei) =>
             publicClient.readContract({
               address: env.CONTRACT_ADDRESS,
               abi: DYNAFLUX_ABI,
               functionName: "quoteNet",
-              args: [parseEther(g.toFixed(6)), isGen],
+              args: [gWei, isGen],
             })
           )
         );
         const rows = sampleGrosses.map(
-          (g, idx) =>
-            `${g.toFixed(2).padStart(10)} -> ${Number(formatEther(quotes[idx])).toFixed(4).padStart(10)}`
+          (gWei, idx) => `${fmt6g(gWei).padStart(12)} -> ${fmt6g(quotes[idx]).padStart(12)}`
         );
         return jsonResponse({
           type: 4,
           data: {
             content:
-              `**[オンチェーン取得額サマリー (${isGen ? "新規発行 c=1.62" : "通常移転 c=0.90"})]**\n` +
-              `- 基準熱量 (\`early\`): \`${earlyDfx.toFixed(4)} DFX\`\n` +
-              `- 直近熱量 (\`late\`):  \`${lateDfx.toFixed(4)} DFX\`\n` +
-              `\`\`\`text\n     gross ->        net\n${rows.join("\n")}\n\`\`\``,
+              `**[取得額サマリー (${isGen ? "発行 c=1.62" : "移転 c=0.90"})]**\n` +
+              `- \`early\`: \`${fmt6g(early)} DFX\` | \`late\`: \`${fmt6g(late)} DFX\`\n` +
+              `\`\`\`text\n       gross ->          net\n${rows.join("\n")}\n\`\`\``,
           },
         });
       }
@@ -296,21 +296,15 @@ export default {
         ]);
         const relayerEth = await publicClient.getBalance({ address: relayerAddr });
         const ethNum = Number(formatEther(relayerEth));
-        const gasWarning =
-          ethNum < 0.005
-            ? ` ⚠️ **(残高低下: Faucetから \`${relayerAddr}\` へテストETHを補充してください)**`
-            : " (正常)";
+        const gasStatus = ethNum < 0.005 ? "⚠️ 要補充" : "OK";
 
         return jsonResponse({
           type: 4,
           data: {
             content:
-              `**[オンチェーン状態証明 & 可用性ステータス]**\n` +
-              `- コントラクト: [\`${env.CONTRACT_ADDRESS}\`](${env.EXPLORER_URL}/address/${env.CONTRACT_ADDRESS})\n` +
-              `- 累積ステップ数: \`${steps.toString()}\`\n` +
-              `- 最新 \`stateHash\`: \`${stateHash}\`\n` +
-              `- ガス代タンク (\`relayer\`): \`${ethNum.toFixed(4)} ETH\`${gasWarning}\n` +
-              `- 検証ステータス: **VALID (EVM決定論的コンセンサスにより改竄不可)**`,
+              `**[状態証明]** **VALID** (Steps: \`${steps.toString()}\`)\n` +
+              `- \`stateHash\`: \`${stateHash}\`\n` +
+              `- Contract: [\`${env.CONTRACT_ADDRESS}\`](${env.EXPLORER_URL}/address/${env.CONTRACT_ADDRESS}) | Gas: \`${fmt6g(relayerEth)} ETH\` (${gasStatus})`,
           },
         });
       }
