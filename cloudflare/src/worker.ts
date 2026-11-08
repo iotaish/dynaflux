@@ -24,12 +24,13 @@ import {
   parseEther,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { baseSepolia } from "viem/chains";
+import { baseSepolia, sepolia } from "viem/chains";
 
 export interface Env {
   DISCORD_PUBLIC_KEY: string;
   DISCORD_APP_ID: string;
   RELAYER_PRIVATE_KEY: Hex;
+  CHAIN_ID?: string;
   RPC_URL: string;
   EXPLORER_URL: string;
   CONTRACT_ADDRESS: Address;
@@ -152,8 +153,9 @@ export default {
       const getOption = (optName: string) =>
         options.find((o: { name: string; value: unknown }) => o.name === optName)?.value;
 
+      const activeChain = env.CHAIN_ID === "84532" ? baseSepolia : sepolia;
       const publicClient = createPublicClient({
-        chain: baseSepolia,
+        chain: activeChain,
         transport: http(env.RPC_URL),
       });
 
@@ -254,7 +256,7 @@ export default {
               const relayerAccount = privateKeyToAccount(env.RELAYER_PRIVATE_KEY);
               const walletClient = createWalletClient({
                 account: relayerAccount,
-                chain: baseSepolia,
+                chain: activeChain,
                 transport: http(env.RPC_URL),
               });
 

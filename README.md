@@ -107,11 +107,13 @@ uv run ruff check && uv run pyright && uv run pytest
 
 この構成では、**ブロックチェーン（Base Sepolia テストネット）自体が世界中に分散複製された永久無料のデータベース**となり、**Cloudflare Workers（無料枠）が 24 時間 365 日稼働する Discord の窓口**になります。参加メンバーはスマホの Discord アプリだけで利用でき、何もインストールする必要はありません。
 
-### 4.1. Step 1: 無料テストネット（Base Sepolia）へのコントラクトデプロイ
+### 4.1. Step 1: 無料テストネット（Ethereum Sepolia）へのコントラクトデプロイ
 
-1. MetaMask でリレイヤー用のウォレットを 1 つ用意し、[Coinbase Base Sepolia Faucet](https://portal.cdp.coinbase.com/products/faucet) 等から無料のテスト用 ETH を受け取ります。
+1. MetaMask でテスト用のウォレットを 1 つ用意し、メインネット残高（0.001 ETH 等）が不要な以下の無料 Faucet から **Sepolia ETH** を受け取ります：
+   - [Google Cloud Web3 Sepolia Faucet](https://cloud.google.com/application/web3/faucet/ethereum/sepolia)（Google アカウントでログインするだけ・残高制限なし）
+   - [Sepolia PoW Faucet (pk910)](https://sepolia-faucet.pk910.de/)（ブラウザで数分マイニングするだけ・残高制限なし）
 1. ブラウザ上で [Remix IDE](https://remix.ethereum.org/) を開き、`contracts/DynaFluxToken.sol` を貼り付けてコンパイルします。
-1. `Deploy & Run Transactions` タブで Environment を `Injected Provider - MetaMask`（Base Sepolia ネットワーク）にし、コンストラクタ引数 `initialRelayer` に自分のウォレットアドレスを入れて `Deploy` を押します。
+1. `Deploy & Run Transactions` タブで Environment を `Injected Provider - MetaMask`（MetaMask 側を **Sepolia テストネットワーク** に切り替え）にし、コンストラクタ引数 `initialRelayer` に自分のウォレットアドレスを入れて `Deploy` を押します。
 1. デプロイされたコントラクトのアドレス（`0x...`）を控えます。
 
 ### 4.2. Step 2: Cloudflare Workers への Discord Bot デプロイ
