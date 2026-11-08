@@ -2,7 +2,7 @@
 
 DynaFlux (DFX) は、Silvio Gesell の自由貨幣論（減価・流通速度制御）に着想を得て設計された、**完全な分割不変性（Path-Independent Split-Invariance）** と **暗号学的無改竄証明（`stateHash` 監査チェーン + 軽量 Proof-of-Work）** を備えた $O(1)$ 自律型サーモスタット暗号資産プロトコルです。
 
-**完全 0 円・サーバーレス・24 時間稼働** で、無料テストネット（Base Sepolia 等）上のスマートコントラクト（`contracts/DynaFluxToken.sol`）と **Cloudflare Workers** 上の Discord Bot（`cloudflare/`）を直結して運用できます。もちろん MetaMask 等の外部ウォレットへの直接出金（`/withdraw`）にも対応しています。
+**完全 0 円・サーバーレス・24 時間稼働** で、Ethereum Sepolia（または任意の EVM チェーン）上のスマートコントラクト（`contracts/DynaFluxToken.sol`）と **Cloudflare Workers** 上の Discord Bot（`cloudflare/`）を直結して運用できます。MetaMask アプリやブラウザの Remix IDE を使わずに CLI だけで鍵生成・コンパイル・デプロイが完結し、外部ウォレットへの直接出金（`/withdraw`）にも対応しています。
 
 ## 目次 <!-- omit in toc -->
 
@@ -12,9 +12,9 @@ DynaFlux (DFX) は、Silvio Gesell の自由貨幣論（減価・流通速度制
    - [1.3. 100% Pure Burn と軽量 Proof-of-Work (PoW) 発行](#13-100-pure-burn-と軽量-proof-of-work-pow-発行)
    - [1.4. 計算の無改竄証明 (`stateHash` 監査チェーン)](#14-計算の無改竄証明-statehash-監査チェーン)
 - [2. ディレクトリ構成](#2-ディレクトリ構成)
-- [3. ローカル検証・シミュレーション](#3-ローカル検証シミュレーション)
-- [4. 完全無料・24時間稼働の本番導入ガイド（Testnet × Cloudflare Workers）](#4-完全無料24時間稼働の本番導入ガイドtestnet--cloudflare-workers)
-   - [4.1. Step 1: 無料テストネット（Base Sepolia）へのコントラクトデプロイ](#41-step-1-無料テストネットbase-sepoliaへのコントラクトデプロイ)
+- [3. ローカル検証・パラメータ調整とコントラクトへのフリーズ](#3-ローカル検証パラメータ調整とコントラクトへのフリーズ)
+- [4. 完全無料・24時間稼働の本番導入ガイド（Sepolia × Cloudflare Workers）](#4-完全無料24時間稼働の本番導入ガイドsepolia--cloudflare-workers)
+   - [4.1. Step 1: テストネットへのコントラクト自動デプロイ（MetaMask・Remix 不要）](#41-step-1-テストネットへのコントラクト自動デプロイmetamaskremix-不要)
    - [4.2. Step 2: Cloudflare Workers への Discord Bot デプロイ](#42-step-2-cloudflare-workers-への-discord-bot-デプロイ)
    - [4.3. Step 3: Discord スラッシュコマンドの登録と利用](#43-step-3-discord-スラッシュコマンドの登録と利用)
 
@@ -38,16 +38,16 @@ $$\frac{d(\text{net})}{d(\text{gross})} = \frac{\max(\text{early} - c \cdot (\te
 $$\text{net}(\text{gross}) = \frac{\max(\text{early} - c \cdot \text{late},\ 0)}{c} \times \left(1 - \exp\left(-\frac{c \cdot \text{gross}}{\text{early}}\right)\right)$$
 
 1. **完全な分割不変性**:
-   - 同一時刻において額面 $X$ を 1 回で送っても、$X = x_1 + x_2 + \dots + x_n$ のように何十回に小分けして送っても、受け取れる $\sum \text{net}_i$ と焼却される税金総額 $\sum (\text{gross}_i - \text{net}_i)$ が数学的に完全一致します。
-1. **過熱時の完全遮断（サーモスタット上限）**:
-   - 1回で 100 億枚を申告・送金しても、手取り額は残余容量 $\frac{\text{early} - c \cdot \text{late}}{c}$ を決して超えられず、$c \cdot \text{late} \ge \text{early}$ に達した瞬間に手取りは `0`（税率 100%）となり、冷却されるまで自動的に遮断されます。
+   - 同一時刻において額面 $X$ を 1 回で送っても、$X = x_1 + x_2 + \dots + x_n$ のように何十回に小分けして送っても、受け取れる $\sum \text{net}_i$ と焼却される税金総額 $\sum (\text{gross}_i - \text{net}_i)$ が数学的に一致します。
+1. **2段階サーモスタット上限（発行遮断と移転遮断の分離）**:
+   - 直近熱量 `late` が `early` の約 $61.7\%$（$1 / 1.62$）に達すると新規発行（Mint）の手取りが `0` となって自動的に停止し、既存トークンの移転（$c = 0.90$）のみが `early` の約 $111.1\%$ まで継続可能となります。
 
 ### 1.3. 100% Pure Burn と軽量 Proof-of-Work (PoW) 発行
 
 1. **100% 焼却（特権・中央金庫なし）**:
    - 徴収された税金（$\text{gross} - \text{net}$）はすべて消滅（Burn）します。オーナー権限や `stakingPool` / `treasury` による中抜きは一切存在しません。
 1. **スマホ対応の超軽量理論 PoW**:
-   - 新規発行時は、最新の `stateHash` に束縛された軽量 PoW パズル（先頭 8 ビットゼロ、スマホや Worker で 1 ミリ秒未満）を解くことで、誰でも匿名・平等に発行できます。
+   - 新規発行時は、最新の `stateHash` に束縛された軽量 PoW パズル（先頭 8 ビットゼロ、スマホや Worker で 1 ミリ秒未満）を解くことで、時間クールダウン制限なしで誰でも匿名・平等に発行できます。
 
 ### 1.4. 計算の無改竄証明 (`stateHash` 監査チェーン)
 
@@ -62,10 +62,12 @@ dynaflux/
 ├── config/
 │   └── params.yml                     # トークノミクス・PoW パラメータ設定ファイル (SSOT)
 ├── contracts/
-│   └── DynaFluxToken.sol              # Base Sepolia 等にデプロイする自律型 ERC-20 コントラクト
+│   └── DynaFluxToken.sol              # EVM チェーンにデプロイする自律型 ERC-20 コントラクト
 ├── cloudflare/                        # 完全無料・24時間稼働の Cloudflare Workers Discord Bot
+│   ├── scripts/
+│   │   └── deploy_contract.ts         # MetaMask・Remix 不要の自動鍵生成・コンパイル・デプロイツール
 │   ├── src/
-│   │   └── worker.ts                  # Discord Webhook 署名検証 + オンチェーン直結実行エンジン
+│   │   └── worker.ts                  # Discord Ed25519 署名検証 + オンチェーン直結実行エンジン
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── wrangler.toml
@@ -96,22 +98,24 @@ uv sync
 # 1. config/params.yml の値でシミュレーション & 改竄検知デモを実行
 uv run dynaflux simulate
 
-# 2. 調整した config/params.yml の値を contracts/DynaFluxToken.sol に焼き込む（フリーズ準備）
+# 2. 調整した config/params.yml の値を contracts/DynaFluxToken.sol に焼き込む（フリーズ）
 uv run dynaflux freeze
 
 # 3. Lint・フォーマット・型検査・単体テストの一括実行
 uv run ruff check && uv run pyright && uv run pytest
 ```
 
-## 4. 完全無料・24時間稼働の本番導入ガイド（Testnet × Cloudflare Workers）
+## 4. 完全無料・24時間稼働の本番導入ガイド（Sepolia × Cloudflare Workers）
 
-この構成では、**ブロックチェーン（Base Sepolia テストネット）自体が世界中に分散複製された永久無料のデータベース**となり、**Cloudflare Workers（無料枠）が 24 時間 365 日稼働する Discord の窓口**になります。参加メンバーはスマホの Discord アプリだけで利用でき、何もインストールする必要はありません。
+この構成では、**ブロックチェーン（Ethereum Sepolia テストネット）自体が世界中に分散複製された永久無料のデータベース**となり、**Cloudflare Workers（無料枠）が 24 時間 365 日稼働する Discord の窓口**になります。参加メンバーはスマホの Discord アプリだけで利用でき、何もインストールする必要はありません。
 
-### 4.1. Step 1: 無料テストネット（Ethereum Sepolia）へのコントラクト自動デプロイ（MetaMask・Remix 不要）
+- **稼働中コントラクト (Ethereum Sepolia)**: [`0x5518963068663df44026d589800218dd4647be21`](https://sepolia.etherscan.io/address/0x5518963068663df44026d589800218dd4647be21)
 
-MetaMask アプリやブラウザの Remix IDE を一切使わずに、コマンド 1 つでウォレット生成からコントラクトのコンパイル・デプロイ・`wrangler.toml` の更新まで全自動で完了します。
+### 4.1. Step 1: テストネットへのコントラクト自動デプロイ（MetaMask・Remix 不要）
 
-1. 初回実行でテストネット用ウォレット（アドレスと秘密鍵）を自動作成します：
+MetaMask アプリやブラウザの Remix IDE を一切使わずに、コマンド 1 つで secp256k1 鍵ペア生成から `solc` ローカルコンパイル、コントラクトのデプロイ、`wrangler.toml` の更新まで全自動で完了します。
+
+1. 初回実行でテストネット用ウォレット（アドレスと秘密鍵 `.relayer-wallet.json`）を自動作成します：
 
    ```sh
    cd cloudflare
@@ -132,35 +136,36 @@ MetaMask アプリやブラウザの Remix IDE を一切使わずに、コマン
 
 ### 4.2. Step 2: Cloudflare Workers への Discord Bot デプロイ
 
-1. `cloudflare/wrangler.toml` の `CONTRACT_ADDRESS` に、Step 1 でデプロイしたコントラクトアドレスを記入します。
 1. 以下のコマンドで Cloudflare Workers（無料枠）へデプロイし、シークレットを設定します。
 
    ```sh
    cd cloudflare
-   npm install
+   npx wrangler login
    npx wrangler deploy
 
-   # Discord Developer Portal の General Information にある Public Key と Application ID
+   # Discord Developer Portal -> General Information の Public Key と Application ID
    npx wrangler secret put DISCORD_PUBLIC_KEY
    npx wrangler secret put DISCORD_APP_ID
 
-   # Step 1 で使ったリレイヤーウォレットの秘密鍵 (0x...)
+   # Step 1 で自動生成された cloudflare/.relayer-wallet.json 内の privateKey (0x...)
    npx wrangler secret put RELAYER_PRIVATE_KEY
    ```
 
-1. デプロイ完了時に表示される URL（`https://dynaflux-discord-worker.<あなたのサブドメイン>.workers.dev`）を、[Discord Developer Portal](https://discord.com/developers/applications) の **General Information -> Interactions Endpoint URL** に貼り付けて `Save Changes` を押します。
+1. デプロイ完了時に表示される URL（`https://dynaflux-discord-worker.<サブドメイン>.workers.dev`）を、[Discord Developer Portal](https://discord.com/developers/applications) の **General Information -> Interactions Endpoint URL** に貼り付けて `Save Changes` を押します。
 
 ### 4.3. Step 3: Discord スラッシュコマンドの登録と利用
 
-1. スラッシュコマンド（`/report`, `/withdraw`, `/balance`, `/summary`, `/verify`）を Discord に登録します（最初の 1 回だけ実行すれば完了です）。
+1. スラッシュコマンド（`/report`, `/withdraw`, `/balance`, `/summary`, `/verify`）を Discord に登録します（初回のみ）。
 
    ```sh
    DISCORD_APP_ID="あなたのAppID" DISCORD_BOT_TOKEN="あなたのBotToken" \
      uv run python scripts/register_discord_commands.py
    ```
 
-1. これであなたの PC の電源を切っても、Discord サーバーのメンバー全員が 24 時間いつでも以下のコマンドを使えます：
-   - `/report amount:50`: 軽量 PoW を解いてオンチェーンで新規発行（Mint）し、BaseScan のトランザクションリンクを返します。
-   - `/report amount:20 recipient:@friend transfer_mode:True`: メンバー間でオンチェーン送金します。
-   - `/withdraw address:0xあなたのMetaMaskアドレス amount:10`: Discord 内の自分の Vault アドレスから、外部の MetaMask ウォレットへ本物の ERC-20 トークン（DFX）として直接引き出します（MetaMask で `CONTRACT_ADDRESS` をインポートすれば残高が表示され、自由に送金できます）。
-   - `/balance`, `/summary`, `/verify`: ブロックチェーン上の残高、熱量早見表、および `stateHash` 監査証明をリアルタイムに照会します。
+1. これで PC の電源を切っても、Discord サーバーのメンバー全員が 24 時間いつでも以下のコマンドを使えます：
+   - `/summary [is_gen]`: ブロックチェーン上の基準熱量（`early`）と直近熱量（`late`）、`gross -> net` 早見表を表示します。
+   - `/report amount:100`: 軽量 PoW を解いてオンチェーンで新規発行（Mint）し、Etherscan のトランザクションリンクを返します。
+   - `/report amount:20 recipient:@friend transfer_mode:True`: メンバー間でオンチェーン送金します（差額の税金は 100% Burn）。
+   - `/balance [user]`: Discord アカウントに紐づく決定論的オンチェーンアドレスと現在の DFX 残高を開示します。
+   - `/withdraw address:0x外部ウォレットアドレス amount:10`: Discord 内の自分の Vault アドレスから外部ウォレットへ本物の ERC-20 トークン（DFX）として直接引き出します。
+   - `/verify`: ブロックチェーン上の最新 `stateHash` と累積ステップ数を監査検証します。
