@@ -10,6 +10,7 @@ from dynaflux import (
     WAD,
     DynaFluxParams,
     Ledger,
+    compute_summary,
     exp_neg_wad,
     freeze_params_to_solidity,
     load_params,
@@ -24,6 +25,35 @@ def test_exp_neg_wad_stability() -> None:
     val_5 = exp_neg_wad(5 * WAD) / WAD
     assert 0.0065 < val_5 < 0.0070
     assert exp_neg_wad(45 * WAD) == 0
+
+
+def test_time_step_associativity() -> None:
+    """
+    Evaluating decay over dt = dt_1 + ... + dt_k in one shot vs multiple intermediate steps
+    yields the same (late, early) state (semigroup / time-associativity property).
+    """
+    t0 = 1_700_000_000
+    total_dt = 7 * 86400  # 7 days
+    l0 = 1_000 * WAD
+    e0 = 2_000 * WAD
+
+    late_one_shot, early_one_shot = compute_summary(l0, e0, t0, t0 + total_dt)
+
+    # 2-step split: 3 days + 4 days
+    l1, e1 = compute_summary(l0, e0, t0, t0 + 3 * 86400)
+    late_two_step, early_two_step = compute_summary(l1, e1, t0 + 3 * 86400, t0 + total_dt)
+    assert late_two_step / WAD == pytest.approx(late_one_shot / WAD, rel=1e-3)
+    assert early_two_step / WAD == pytest.approx(early_one_shot / WAD, rel=1e-3)
+
+    # 7-step daily split (including when starting from MIN_EARLY floor)
+    late_cur, early_cur = l0, MIN_EARLY
+    cur_t = t0
+    for _ in range(7):
+        late_cur, early_cur = compute_summary(late_cur, early_cur, cur_t, cur_t + 86400)
+        cur_t += 86400
+    late_floor_one_shot, early_floor_one_shot = compute_summary(l0, MIN_EARLY, t0, t0 + total_dt)
+    assert late_cur / WAD == pytest.approx(late_floor_one_shot / WAD, rel=2e-3)
+    assert early_cur / WAD == pytest.approx(early_floor_one_shot / WAD, rel=2e-3)
 
 
 def test_split_invariance_transfer() -> None:

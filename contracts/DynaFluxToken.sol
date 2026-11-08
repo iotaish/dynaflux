@@ -157,6 +157,9 @@ contract DynaFluxToken is IERC20 {
 
     /**
      * @notice Returns the current decayed (late, early) values at `block.timestamp`.
+     * @dev Satisfies exact time-step associativity (semigroup property over dt):
+     *      L(dt) = L_0 * d_late(dt)
+     *      E(dt) = MIN_EARLY + (E_0 - MIN_EARLY) * d_early(dt) + L_0 * (d_early(dt) - d_late(dt))
      */
     function currentSummary() public view returns (uint256 late, uint256 early) {
         uint256 dt = block.timestamp - lastUpdateTimestamp;
@@ -164,10 +167,11 @@ contract DynaFluxToken is IERC20 {
         uint256 dEarly = expNegWad(LAMBDA_EARLY * dt);
 
         late = (lateState * dLate) / WAD;
+        uint256 lateAtEarlyRate = (lateState * dEarly) / WAD;
+        uint256 maturedFromLate = (lateAtEarlyRate > late) ? (lateAtEarlyRate - late) : 0;
 
-        uint256 maturedFromLate = (lateState > late) ? ((lateState - late) * dEarly) / WAD : 0;
-        uint256 decayedEarly = (earlyState * dEarly) / WAD + maturedFromLate;
-        early = decayedEarly > MIN_EARLY ? decayedEarly : MIN_EARLY;
+        uint256 earlyExcess = (earlyState > MIN_EARLY) ? (earlyState - MIN_EARLY) : 0;
+        early = MIN_EARLY + (earlyExcess * dEarly) / WAD + maturedFromLate;
     }
 
     /**
