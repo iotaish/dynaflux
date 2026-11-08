@@ -1,6 +1,8 @@
 # DynaFlux (DFX) — Autonomous Verifiable Thermostatic Currency
 
-DynaFlux (DFX) は、Silvio Gesell の自由貨幣論（減価・流通速度制御）と元の `token_manage` プロトコルの数理モデルを、**完全な分割不変性（Path-Independent Split-Invariance）** と **暗号学的無改竄証明（`stateHash` 監査チェーン + 軽量 Proof-of-Work）** を備えた $O(1)$ 自律型プロトコルへと進化させた実装です。スマートコントラクト（`contracts/DynaFluxToken.sol`）および Discord Bot（`dynaflux-bot`）として即座に導入・運用できます。
+DynaFlux (DFX) は、Silvio Gesell の自由貨幣論（減価・流通速度制御）と元の `token_manage` プロトコルの数理モデルを、**完全な分割不変性（Path-Independent Split-Invariance）** と **暗号学的無改竄証明（`stateHash` 監査チェーン + 軽量 Proof-of-Work）** を備えた $O(1)$ 自律型プロトコルへと進化させた実装です。
+
+**完全 0 円・サーバーレス・24 時間稼働** で、無料テストネット（Base Sepolia 等）上のスマートコントラクト（`contracts/DynaFluxToken.sol`）と **Cloudflare Workers** 上の Discord Bot（`cloudflare/`）を直結して運用できます。もちろん MetaMask 等の外部ウォレットへの直接出金（`/withdraw`）にも対応しています。
 
 ## 目次 <!-- omit in toc -->
 
@@ -10,8 +12,11 @@ DynaFlux (DFX) は、Silvio Gesell の自由貨幣論（減価・流通速度制
    - [1.3. 100% Pure Burn と軽量 Proof-of-Work (PoW) 発行](#13-100-pure-burn-と軽量-proof-of-work-pow-発行)
    - [1.4. 計算の無改竄証明 (`stateHash` 監査チェーン)](#14-計算の無改竄証明-statehash-監査チェーン)
 - [2. ディレクトリ構成](#2-ディレクトリ構成)
-- [3. セットアップと検証コマンド](#3-セットアップと検証コマンド)
-- [4. Discord Bot の導入手順](#4-discord-bot-の導入手順)
+- [3. ローカル検証・シミュレーション](#3-ローカル検証シミュレーション)
+- [4. 完全無料・24時間稼働の本番導入ガイド（Testnet × Cloudflare Workers）](#4-完全無料24時間稼働の本番導入ガイドtestnet--cloudflare-workers)
+   - [4.1. Step 1: 無料テストネット（Base Sepolia）へのコントラクトデプロイ](#41-step-1-無料テストネットbase-sepoliaへのコントラクトデプロイ)
+   - [4.2. Step 2: Cloudflare Workers への Discord Bot デプロイ](#42-step-2-cloudflare-workers-への-discord-bot-デプロイ)
+   - [4.3. Step 3: Discord スラッシュコマンドの登録と利用](#43-step-3-discord-スラッシュコマンドの登録と利用)
 
 ## 1. 数理モデルと暗号学的性質
 
@@ -42,7 +47,7 @@ $$\text{net}(\text{gross}) = \frac{\max(\text{early} - c \cdot \text{late},\ 0)}
 1. **100% 焼却（特権・中央金庫なし）**:
    - 徴収された税金（$\text{gross} - \text{net}$）はすべて消滅（Burn）します。オーナー権限や `stakingPool` / `treasury` による中抜きは一切存在しません。
 1. **スマホ対応の超軽量理論 PoW**:
-   - 新規発行（元の `transferor == ""` 報告）時は、最新の `stateHash` に束縛された軽量 PoW パズル（先頭 8 ビットゼロ、スマホや Bot で 1 ミリ秒未満）を解くことで、誰でも匿名・平等に発行できます。
+   - 新規発行（元の `transferor == ""` 報告）時は、最新の `stateHash` に束縛された軽量 PoW パズル（先頭 8 ビットゼロ、スマホや Worker で 1 ミリ秒未満）を解くことで、誰でも匿名・平等に発行できます。
 
 ### 1.4. 計算の無改竄証明 (`stateHash` 監査チェーン)
 
@@ -50,31 +55,34 @@ $$\text{net}(\text{gross}) = \frac{\max(\text{early} - c \cdot \text{late},\ 0)}
 
 $$\text{stateHash}_n = H\left(\text{stateHash}_{n-1} \parallel t_n \parallel \text{sender}_n \parallel \text{recipient}_n \parallel \text{gross}_n \parallel \text{net}_n \parallel \text{powNonce}_n \parallel \text{late}_n \parallel \text{early}_n\right)$$
 
-すべての演算が決定論的な 18 桁固定小数点整数（WAD）で定義されているため、過去のどのステップであっても $1\text{ wei}$（$10^{-18}\text{ DFX}$）の税ごまかしや 1 秒の減衰改竄があれば、誰でも `/verify` コマンドや CLI で即座に検知できます。
-
 ## 2. ディレクトリ構成
 
 ```text
 dynaflux/
 ├── contracts/
-│   └── DynaFluxToken.sol   # 自律型・分割不変・stateHash証明つき ERC-20 コントラクト
+│   └── DynaFluxToken.sol              # Base Sepolia 等にデプロイする自律型 ERC-20 コントラクト
+├── cloudflare/                        # 完全無料・24時間稼働の Cloudflare Workers Discord Bot
+│   ├── src/
+│   │   └── worker.ts                  # Discord Webhook 署名検証 + オンチェーン直結実行エンジン
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── wrangler.toml
 ├── src/
-│   └── dynaflux/
+│   └── dynaflux/                      # Python 決定論的エンジン・ローカル Discord Bot・CLI
 │       ├── __init__.py
-│       ├── math_engine.py  # Solidity とビット単位で一致する固定小数点演算・PoW エンジン
-│       ├── ledger.py       # ハッシュチェーン台帳と公開監査検証器 (verify_snapshot)
-│       ├── bot.py          # Discord スラッシュコマンド Bot (/report, /balance, /summary, /verify)
-│       └── cli.py          # シミュレーション・監査用 CLI
+│       ├── math_engine.py
+│       ├── ledger.py
+│       ├── bot.py
+│       └── cli.py
 ├── scripts/
-│   └── simulate.py         # 単体実行可能な検証スクリプト
+│   ├── simulate.py                    # 分割不変性・PoW・改竄検知の検証スクリプト
+│   └── register_discord_commands.py   # Discord スラッシュコマンド一括登録スクリプト
 ├── tests/
-│   └── test_dynaflux.py    # 分割不変性・PoW飽和・1wei改竄検知の自動テスト
-└── pyproject.toml          # uv パッケージ・ツール設定
+│   └── test_dynaflux.py               # pytest 自動検証スイート
+└── pyproject.toml
 ```
 
-## 3. セットアップと検証コマンド
-
-パッケージ管理には `uv` を使用します。
+## 3. ローカル検証・シミュレーション
 
 ```sh
 # 依存パッケージの同期
@@ -87,26 +95,48 @@ uv run dynaflux simulate
 uv run ruff check && uv run pyright && uv run pytest
 ```
 
-## 4. Discord Bot の導入手順
+## 4. 完全無料・24時間稼働の本番導入ガイド（Testnet × Cloudflare Workers）
 
-高価な専用サーバーやポート開放は不要です。手元の PC や無料クラウド環境から以下の手順ですぐに稼働できます。
+この構成では、**ブロックチェーン（Base Sepolia テストネット）自体が世界中に分散複製された永久無料のデータベース**となり、**Cloudflare Workers（無料枠）が 24 時間 365 日稼働する Discord の窓口**になります。参加メンバーはスマホの Discord アプリだけで利用でき、何もインストールする必要はありません。
 
-1. **Discord Bot トークンの取得**:
-   - [Discord Developer Portal](https://discord.com/developers/applications) で `New Application` を作成します。
-   - 左メニューの `Bot` から `Reset Token` を押してトークンをコピーします。
-   - 左メニューの `OAuth2` -> `URL Generator` で `bot` と `applications.commands` にチェックを入れ、生成された URL から自分の Discord サーバーに Bot を招待します。
-1. **環境変数の設定と起動**:
-   - トークンを環境変数に渡して `dynaflux-bot` を起動します。
+### 4.1. Step 1: 無料テストネット（Base Sepolia）へのコントラクトデプロイ
+
+1. MetaMask でリレイヤー用のウォレットを 1 つ用意し、[Coinbase Base Sepolia Faucet](https://portal.cdp.coinbase.com/products/faucet) 等から無料のテスト用 ETH を受け取ります。
+1. ブラウザ上で [Remix IDE](https://remix.ethereum.org/) を開き、`contracts/DynaFluxToken.sol` を貼り付けてコンパイルします。
+1. `Deploy & Run Transactions` タブで Environment を `Injected Provider - MetaMask`（Base Sepolia ネットワーク）にし、コンストラクタ引数 `initialRelayer` に自分のウォレットアドレスを入れて `Deploy` を押します。
+1. デプロイされたコントラクトのアドレス（`0x...`）を控えます。
+
+### 4.2. Step 2: Cloudflare Workers への Discord Bot デプロイ
+
+1. `cloudflare/wrangler.toml` の `CONTRACT_ADDRESS` に、Step 1 でデプロイしたコントラクトアドレスを記入します。
+1. 以下のコマンドで Cloudflare Workers（無料枠）へデプロイし、シークレットを設定します。
 
    ```sh
-   export DISCORD_BOT_TOKEN="あなたのBotトークン"
-   uv run dynaflux-bot
+   cd cloudflare
+   npm install
+   npx wrangler deploy
+
+   # Discord Developer Portal の General Information にある Public Key と Application ID
+   npx wrangler secret put DISCORD_PUBLIC_KEY
+   npx wrangler secret put DISCORD_APP_ID
+
+   # Step 1 で使ったリレイヤーウォレットの秘密鍵 (0x...)
+   npx wrangler secret put RELAYER_PRIVATE_KEY
    ```
 
-1. **利用可能なスラッシュコマンド**:
-   - `/report amount:<額> recipient:<相手> transfer_mode:<True|False>`:
-      - `transfer_mode=False`（デフォルト）: 軽量 PoW を自動で解いて新規発行（Mint）を報告します。
-      - `transfer_mode=True`: あなたの残高から受領者へ送金します。
-   - `/balance [user]`: 指定ユーザーまたは自分の DFX 残高と総流通量を開示します。
-   - `/summary [is_gen]`: 現在の `early` / `late` 熱量状態と `gross -> net` の早見表を表示します。
-   - `/verify`: 創世（Genesis）からの全履歴・税計算・PoW をその場でゼロから再計算し、1 wei の改竄もないことを数学的に証明します。
+1. デプロイ完了時に表示される URL（`https://dynaflux-discord-worker.<あなたのサブドメイン>.workers.dev`）を、[Discord Developer Portal](https://discord.com/developers/applications) の **General Information -> Interactions Endpoint URL** に貼り付けて `Save Changes` を押します。
+
+### 4.3. Step 3: Discord スラッシュコマンドの登録と利用
+
+1. スラッシュコマンド（`/report`, `/withdraw`, `/balance`, `/summary`, `/verify`）を Discord に登録します（最初の 1 回だけ実行すれば完了です）。
+
+   ```sh
+   DISCORD_APP_ID="あなたのAppID" DISCORD_BOT_TOKEN="あなたのBotToken" \
+     uv run python scripts/register_discord_commands.py
+   ```
+
+1. これであなたの PC の電源を切っても、Discord サーバーのメンバー全員が 24 時間いつでも以下のコマンドを使えます：
+   - `/report amount:50`: 軽量 PoW を解いてオンチェーンで新規発行（Mint）し、BaseScan のトランザクションリンクを返します。
+   - `/report amount:20 recipient:@friend transfer_mode:True`: メンバー間でオンチェーン送金します。
+   - `/withdraw address:0xあなたのMetaMaskアドレス amount:10`: Discord 内の自分の Vault アドレスから、外部の MetaMask ウォレットへ本物の ERC-20 トークン（DFX）として直接引き出します（MetaMask で `CONTRACT_ADDRESS` をインポートすれば残高が表示され、自由に送金できます）。
+   - `/balance`, `/summary`, `/verify`: ブロックチェーン上の残高、熱量早見表、および `stateHash` 監査証明をリアルタイムに照会します。
