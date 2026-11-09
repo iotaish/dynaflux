@@ -1,11 +1,13 @@
 {
   "name": "dynaflux-discord-worker",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "chain-deploy": "tsx scripts/deploy_contract.ts"
+    "chain-deploy": "tsx scripts/deploy_contract.ts",
+    "snapshot": "tsx scripts/migrate_contract.ts --snapshot-only",
+    "migrate": "tsx scripts/migrate_contract.ts"
   },
   "dependencies": {
     "viem": "^2.21.0"
