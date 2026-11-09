@@ -101,7 +101,8 @@ def build_bot(ledger_path: Path | None = None) -> DynaFluxBot:
         bal = bot.ledger.balance_of(str(target.id))
         supply = bot.ledger.snapshot.total_supply / WAD
         await interaction.response.send_message(
-            f"**[資産開示]** <@{target.id}> の残高: **`{bal:,.6f} DFX`** （総流通量: `{supply:,.4f} DFX`）"
+            f"**[資産開示]** <@{target.id}> の残高: **`{bal:,.6f} DFX`** （総流通量: `{supply:,.4f} DFX`）",
+            ephemeral=True,
         )
 
     @bot.tree.command(
@@ -125,7 +126,8 @@ def build_bot(ledger_path: Path | None = None) -> DynaFluxBot:
             f"```text\n"
             f"     gross ->        net\n"
             f"{table_lines}\n"
-            f"```"
+            f"```",
+            ephemeral=True,
         )
 
     @bot.tree.command(
@@ -140,7 +142,8 @@ def build_bot(ledger_path: Path | None = None) -> DynaFluxBot:
             f"- 判定結果: **{status_icon}**\n"
             f"- 検証済みステップ数: `{res.checked_steps}`\n"
             f"- Genesis Hash: `{res.genesis_hash[:20]}...`\n"
-            f"- Latest StateHash: `{res.final_state_hash[:20]}...`"
+            f"- Latest StateHash: `{res.final_state_hash[:20]}...`",
+            ephemeral=True,
         )
 
     return bot

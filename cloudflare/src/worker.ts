@@ -265,6 +265,7 @@ export default {
         return jsonResponse({
           type: 4,
           data: {
+            flags: 64,
             content:
               `**[資産開示]** <@${targetUserId}>\n` +
               `- 残高: **\`${fmt6g(bal)} DFX\`** （流通量: \`${fmt6g(supply)} DFX\`）\n` +
@@ -302,6 +303,7 @@ export default {
         return jsonResponse({
           type: 4,
           data: {
+            flags: 64,
             content:
               `**[取得額サマリー (${isGen ? "発行 c=1.62" : "移転 c=0.90"})]**\n` +
               `- \`early\`: \`${fmt6g(early)} DFX\` | \`late\`: \`${fmt6g(late)} DFX\`\n` +
@@ -337,6 +339,7 @@ export default {
         return jsonResponse({
           type: 4,
           data: {
+            flags: 64,
             content:
               `**[状態証明]** **VALID** (Steps: \`${steps.toString()}\`)\n` +
               `- \`stateHash\`: \`${stateHash}\`\n` +
@@ -348,6 +351,31 @@ export default {
       }
 
       if (name === "report" || name === "withdraw") {
+        const isWithdraw = name === "withdraw";
+        const amountNum = Number(getOption("amount") ?? 0);
+        if (!Number.isFinite(amountNum) || amountNum <= 0 || amountNum > 1_000_000_000) {
+          return jsonResponse({
+            type: 4,
+            data: {
+              flags: 64,
+              content: "エラー: 額は `0 < amount <= 1,000,000,000` の有効な数値で指定してください。",
+            },
+          });
+        }
+
+        const toAddressRaw = isWithdraw ? (String(getOption("address") ?? "").trim() as Address) : ("" as Address);
+        if (isWithdraw && !isAddress(toAddressRaw)) {
+          return jsonResponse({
+            type: 4,
+            data: {
+              flags: 64,
+              content: "エラー: 有効な EVM アドレス (`0x...`) を指定してください。",
+            },
+          });
+        }
+
+        const grossWei = parseEther(amountNum.toFixed(6));
+
         ctx.waitUntil(
           (async () => {
             try {
@@ -358,27 +386,7 @@ export default {
                 transport,
               });
 
-              const amountNum = Number(getOption("amount") ?? 0);
-              if (!Number.isFinite(amountNum) || amountNum <= 0 || amountNum > 1_000_000_000) {
-                await patchDiscordFollowup(
-                  env.DISCORD_APP_ID,
-                  interaction.token,
-                  "エラー: 額は `0 < amount <= 1,000,000,000` の有効な数値で指定してください。"
-                );
-                return;
-              }
-              const grossWei = parseEther(amountNum.toFixed(6));
-
-              if (name === "withdraw") {
-                const toAddressRaw = String(getOption("address") ?? "").trim();
-                if (!isAddress(toAddressRaw)) {
-                  await patchDiscordFollowup(
-                    env.DISCORD_APP_ID,
-                    interaction.token,
-                    "エラー: 有効な EVM アドレス (`0x...`) を指定してください。"
-                  );
-                  return;
-                }
+              if (isWithdraw) {
                 const { txHash, actualNetWei } = await withConcurrencyRetry(async (attempt) => {
                   if (attempt > 1) {
                     await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1500));
@@ -555,7 +563,11 @@ export default {
           })()
         );
 
-        return jsonResponse({ type: 5 });
+        return jsonResponse(
+          isWithdraw
+            ? { type: 5, data: { flags: 64 } }
+            : { type: 5 }
+        );
       }
     }
 
