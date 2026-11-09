@@ -172,8 +172,10 @@ MetaMask アプリやブラウザの Remix IDE を一切使わずに、コマン
    ```
 
 1. これで PC の電源を切っても、Discord サーバーのメンバー全員が 24 時間いつでも以下のコマンドを使えます：
-   - `/report amount:100`: **【全体公開】** 軽量 PoW を解いてオンチェーンで新規発行（Mint）し、成果を共有します。
-   - `/report amount:20 recipient:@friend transfer_mode:True`: **【全体公開】** メンバー間でオンチェーン送金します（差額の税金は 100% Burn）。
+   - `/report amount:100`: **【全体公開】** 軽量 PoW を解いてオンチェーンで新規発行（Mint）し、成果を共有します（受領者未指定時は自分に発行）。
+   - `/report amount:100 amount_basis:net`: **【全体公開】** 手取り額（Net）を 100 DFX に指定して新規発行します（必要な額面を自動逆算）。
+   - `/report amount:20 recipient:@friend`: **【全体公開】** メンバー間でオンチェーン送金します（受領者を指定すると自動的に通常送金となり、差額の税金は 100% Burn）。
+   - `/report amount:20 recipient:@friend amount_basis:net`: **【全体公開】** 相手への手取りがちょうど 20 DFX になるように自動逆算して送金します。
    - `/balance [user]`: **【本人限定】** Discord アカウントに紐づく決定論的オンチェーンアドレスと現在の DFX 残高を自分だけに表示します。
    - `/summary [is_gen]`: **【本人限定】** ブロックチェーン上の基準熱量（`early`）と直近熱量（`late`）、`gross -> net` 早見表を自分だけに表示します。
    - `/withdraw address:0x外部ウォレットアドレス amount:10`: **【本人限定】** 外部ウォレットへの出金処理を安全に行います（出金先アドレスや途中経過は本人にのみ表示）。
