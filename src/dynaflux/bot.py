@@ -12,7 +12,7 @@ import discord
 from discord import app_commands
 
 from .ledger import Ledger
-from .math_engine import WAD
+from .math_engine import WAD, compute_gross_from_net, compute_summary
 
 
 class DynaFluxBot(discord.Client):
@@ -36,52 +36,80 @@ def build_bot(ledger_path: Path | None = None) -> DynaFluxBot:
 
     @bot.tree.command(
         name="report",
-        description="報告（送金または軽量PoWによる新規発行）。sender未指定時は自己申告発行(Mint)になります。",
+        description="報告（受領者未指定時は自己新規発行(Mint)、指定時は通常送金(Transfer)）",
     )
     @app_commands.describe(
-        amount="申告額 (gross DFX)",
-        recipient="受領者（空欄の場合はあなた自身）",
-        transfer_mode="True: あなたの残高から受領者へ送金 / False: 軽量PoWを解いて新規発行 (Mint)",
+        amount="指定額 (DFX)",
+        recipient="受領者（省略時はあなた自身への新規発行 / 指定時はその相手への送金）",
+        amount_basis="額の計算基準（gross: 額面申告 / net: 手取り指定でgrossを自動逆算）",
+    )
+    @app_commands.choices(
+        amount_basis=[
+            app_commands.Choice(name="額面 (Gross) — 既定", value="gross"),
+            app_commands.Choice(name="手取り (Net) — 逆算", value="net"),
+        ]
     )
     async def report_cmd(
         interaction: discord.Interaction,
         amount: float,
         recipient: discord.User | None = None,
-        transfer_mode: bool = False,
+        amount_basis: str = "gross",
     ) -> None:
         now = int(time.time())
+        actor_id = str(interaction.user.id)
+        is_transfer = recipient is not None and str(recipient.id) != actor_id
         target_user = recipient or interaction.user
         target_id = str(target_user.id)
-        actor_id = str(interaction.user.id)
 
         try:
-            if transfer_mode:
+            if amount <= 0:
+                raise ValueError("amount は 0 より大きい数値を指定してください。")
+
+            late_state, early_state = compute_summary(
+                bot.ledger.snapshot.late_state,
+                bot.ledger.snapshot.early_state,
+                bot.ledger.snapshot.last_timestamp,
+                now,
+            )
+
+            if amount_basis == "net":
+                target_net_wad = int(round(amount * WAD))
+                gross_wad = compute_gross_from_net(
+                    target_net_wad, late_state, early_state, is_gen=not is_transfer
+                )
+                gross_dfx = gross_wad / WAD
+            else:
+                gross_dfx = amount
+
+            if is_transfer:
                 record = bot.ledger.transfer(
                     sender=actor_id,
                     recipient=target_id,
-                    gross_dfx=amount,
+                    gross_dfx=gross_dfx,
                     timestamp=now,
                 )
                 net_dfx = record.net_wad / WAD
                 burned_dfx = (record.gross_wad - record.net_wad) / WAD
+                basis_note = f"（手取り目標: `{amount:,.4f} DFX` から逆算）" if amount_basis == "net" else ""
                 await interaction.response.send_message(
                     f"**[送金報告完了 (#{record.step})]**\n"
                     f"- 移転者: <@{actor_id}> → 受領者: <@{target_id}>\n"
-                    f"- 額面 (Gross): `{amount:,.4f} DFX`\n"
+                    f"- 額面 (Gross): `{gross_dfx:,.4f} DFX` {basis_note}\n"
                     f"- **税引き後手取り (Net): `{net_dfx:,.6f} DFX`** （焼却税: `{burned_dfx:,.6f} DFX`）\n"
                     f"- 状態証明 (`stateHash`): `{record.new_state_hash[:16]}...`"
                 )
             else:
                 record, elapsed_ms = bot.ledger.mint(
                     recipient=target_id,
-                    gross_dfx=amount,
+                    gross_dfx=gross_dfx,
                     timestamp=now,
                 )
                 net_dfx = record.net_wad / WAD
+                basis_note = f"（手取り目標: `{amount:,.4f} DFX` から逆算）" if amount_basis == "net" else ""
                 await interaction.response.send_message(
                     f"**[発行報告完了 (#{record.step})]**\n"
                     f"- 受領者: <@{target_id}>\n"
-                    f"- 申告額 (Gross): `{amount:,.4f} DFX`\n"
+                    f"- 申告額 (Gross): `{gross_dfx:,.4f} DFX` {basis_note}\n"
                     f"- **税引き後発行額 (Net): `{net_dfx:,.6f} DFX`**\n"
                     f"- 軽量PoW検証: `nonce={record.pow_nonce}` (`{elapsed_ms:.2f}ms`)\n"
                     f"- 状態証明 (`stateHash`): `{record.new_state_hash[:16]}...`"

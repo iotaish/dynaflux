@@ -5,6 +5,7 @@ Values default to `config/params.yml` (Single Source of Truth).
 """
 
 import hashlib
+import math
 import time
 
 from .config import load_params
@@ -100,6 +101,41 @@ def compute_net(gross_wad: int, late: int, early: int, is_gen: bool) -> int:
     exponent = (c * gross_wad) // early
     one_minus_exp = WAD - exp_neg_wad(exponent)
     return (remaining_capacity * one_minus_exp) // WAD
+
+
+def compute_gross_from_net(net_wad: int, late: int, early: int, is_gen: bool) -> int:
+    """
+    Inverse calculation of `gross` required to achieve desired `net_wad`.
+    Solves for gross: net = remaining_capacity * (1 - exp(-c * gross / early))
+    gross = - (early / c) * ln(1 - (c * net) / (early - c * late))
+    """
+    if net_wad <= 0:
+        return 0
+
+    c = C_GEN if is_gen else C_TRANSFER
+    c_late = (c * late) // WAD
+    if early <= c_late:
+        raise ValueError("熱量キャパシティが枯渇しています（発行・送金上限が 0 です）")
+
+    remaining_capacity = ((early - c_late) * WAD) // c
+    if net_wad >= remaining_capacity:
+        cap_dfx = remaining_capacity / WAD
+        raise ValueError(
+            f"指定された net ({net_wad / WAD:,.4f} DFX) は現在の熱量キャパシティ ({cap_dfx:,.4f} DFX) を超過しています"
+        )
+
+    ratio = (remaining_capacity - net_wad) / remaining_capacity
+    val = -math.log(ratio)
+    gross_float = (early / c) * val
+    gross_wad = int(round(gross_float * WAD))
+
+    calculated_net = compute_net(gross_wad, late, early, is_gen)
+    if calculated_net < net_wad:
+        test_gross = gross_wad + 1
+        if compute_net(test_gross, late, early, is_gen) >= calculated_net:
+            gross_wad = test_gross
+
+    return max(1, gross_wad)
 
 
 def compute_genesis_hash(genesis_timestamp: int, late_state: int, early_state: int) -> str:
