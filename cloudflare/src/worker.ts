@@ -268,7 +268,7 @@ export default {
             content:
               `**[資産開示]** <@${targetUserId}>\n` +
               `- 残高: **\`${fmt6g(bal)} DFX\`** （流通量: \`${fmt6g(supply)} DFX\`）\n` +
-              `- Vault: [\`${targetAddr}\`](${env.EXPLORER_URL}/address/${targetAddr})`,
+              `- Vault: [\`${targetAddr}\`](${env.EXPLORER_URL}/token/${env.CONTRACT_ADDRESS}?a=${targetAddr})`,
           },
         });
       }
@@ -340,7 +340,7 @@ export default {
             content:
               `**[状態証明]** **VALID** (Steps: \`${steps.toString()}\`)\n` +
               `- \`stateHash\`: \`${stateHash}\`\n` +
-              `- Contract: [\`${env.CONTRACT_ADDRESS}\`](${env.EXPLORER_URL}/address/${env.CONTRACT_ADDRESS})\n` +
+              `- Contract: [\`${env.CONTRACT_ADDRESS}\`](${env.EXPLORER_URL}/token/${env.CONTRACT_ADDRESS})\n` +
               `- Relayer: [\`${relayerAddr}\`](${env.EXPLORER_URL}/address/${relayerAddr}) | Gas: \`${fmt6g(relayerEth)} ETH\` (${gasStatus})` +
               topUpHint,
           },

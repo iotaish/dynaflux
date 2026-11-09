@@ -137,7 +137,7 @@ async function main() {
   console.log("==================================================================");
   console.log(` デプロイ完了！`);
   console.log(` コントラクトアドレス: ${contractAddress}`);
-  console.log(` Explorer URL        : https://sepolia.etherscan.io/address/${contractAddress}`);
+  console.log(` Explorer URL        : https://sepolia.etherscan.io/token/${contractAddress}`);
   console.log(` wrangler.toml の CONTRACT_ADDRESS も自動で書き換えました！`);
   console.log("==================================================================");
 }
