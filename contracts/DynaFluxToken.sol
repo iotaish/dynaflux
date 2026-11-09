@@ -108,6 +108,41 @@ contract DynaFluxToken is IERC20 {
         stateHash = keccak256(abi.encodePacked("DYNAFLUX_GENESIS", block.timestamp, lateState, earlyState));
     }
 
+    /**
+     * @notice Zero-tax genesis migration for upgrading from a previous DynaFluxToken contract.
+     * @dev Only callable by `relayer` while `stepCount == 0` (before any PoW mint or transfer occurs).
+     *      Restores exact holder balances and optionally carries over the thermostatic (late, early) state.
+     */
+    function genesisMigrate(
+        address[] calldata holders,
+        uint256[] calldata amounts,
+        uint256 migratedLate,
+        uint256 migratedEarly
+    ) external {
+        require(msg.sender == relayer, "DFX: caller is not relayer");
+        require(stepCount == 0, "DFX: migration locked after genesis");
+        require(holders.length == amounts.length, "DFX: length mismatch");
+
+        for (uint256 i = 0; i < holders.length; i++) {
+            address holder = holders[i];
+            uint256 amt = amounts[i];
+            if (holder != address(0) && amt > 0) {
+                _balances[holder] += amt;
+                _totalSupply += amt;
+                emit Transfer(address(0), holder, amt);
+            }
+        }
+
+        if (migratedEarly >= MIN_EARLY) {
+            lateState = migratedLate;
+            earlyState = migratedEarly;
+            lastUpdateTimestamp = block.timestamp;
+            stateHash = keccak256(
+                abi.encodePacked("DYNAFLUX_GENESIS", block.timestamp, lateState, earlyState, _totalSupply)
+            );
+        }
+    }
+
     // --- ERC-20 Standard Views ---
 
     function totalSupply() external view override returns (uint256) {
