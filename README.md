@@ -172,9 +172,9 @@ MetaMask アプリやブラウザの Remix IDE を一切使わずに、コマン
    ```
 
 1. これで PC の電源を切っても、Discord サーバーのメンバー全員が 24 時間いつでも以下のコマンドを使えます：
-   - `/summary [is_gen]`: ブロックチェーン上の基準熱量（`early`）と直近熱量（`late`）、`gross -> net` 早見表を表示します。
-   - `/report amount:100`: 軽量 PoW を解いてオンチェーンで新規発行（Mint）し、Etherscan のトランザクションリンクを返します。
-   - `/report amount:20 recipient:@friend transfer_mode:True`: メンバー間でオンチェーン送金します（差額の税金は 100% Burn）。
-   - `/balance [user]`: Discord アカウントに紐づく決定論的オンチェーンアドレスと現在の DFX 残高を開示します。
-   - `/withdraw address:0x外部ウォレットアドレス amount:10`: Discord 内の自分の Vault アドレスから外部ウォレットへ本物の ERC-20 トークン（DFX）として直接引き出します。
-   - `/verify`: ブロックチェーン上の最新 `stateHash` と累積ステップ数を監査検証します。
+   - `/report amount:100`: **【全体公開】** 軽量 PoW を解いてオンチェーンで新規発行（Mint）し、成果を共有します。
+   - `/report amount:20 recipient:@friend transfer_mode:True`: **【全体公開】** メンバー間でオンチェーン送金します（差額の税金は 100% Burn）。
+   - `/balance [user]`: **【本人限定】** Discord アカウントに紐づく決定論的オンチェーンアドレスと現在の DFX 残高を自分だけに表示します。
+   - `/summary [is_gen]`: **【本人限定】** ブロックチェーン上の基準熱量（`early`）と直近熱量（`late`）、`gross -> net` 早見表を自分だけに表示します。
+   - `/withdraw address:0x外部ウォレットアドレス amount:10`: **【本人限定】** 外部ウォレットへの出金処理を安全に行います（出金先アドレスや途中経過は本人にのみ表示）。
+   - `/verify`: **【本人限定】** ブロックチェーン上の最新 `stateHash` と累積ステップ数を監査検証します。
