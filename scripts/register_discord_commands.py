@@ -10,29 +10,54 @@ Usage:
 import json
 import os
 import urllib.request
+from pathlib import Path
+
+
+def _load_env_file() -> None:
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if env_path.is_file():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+_load_env_file()
 
 COMMANDS = [
     {
         "name": "report",
-        "description": "オンチェーン報告（軽量PoWによる新規発行、またはメンバー間の送金）",
+        "description": "オンチェーン報告（受領者未指定時は自己新規発行、指定時はメンバー間送金）",
         "options": [
             {
                 "name": "amount",
-                "description": "申告額 (gross DFX)",
+                "description": "指定額 (DFX)",
                 "type": 10,  # NUMBER (float)
                 "required": True,
             },
             {
                 "name": "recipient",
-                "description": "受領者（省略時は自分自身）",
+                "description": "受領者（省略時は新規発行 / 指定時はその相手への送金）",
                 "type": 6,  # USER
                 "required": False,
             },
             {
-                "name": "transfer_mode",
-                "description": "True: 残高から送金 / False: 軽量PoWを解いて新規発行 (Mint)",
-                "type": 5,  # BOOLEAN
+                "name": "amount_basis",
+                "description": "額の計算基準（gross: 額面申告 / net: 手取り指定でgrossを自動逆算）",
+                "type": 3,  # STRING
                 "required": False,
+                "choices": [
+                    {
+                        "name": "額面 (Gross) — 既定",
+                        "value": "gross",
+                    },
+                    {
+                        "name": "手取り (Net) — 逆算",
+                        "value": "net",
+                    },
+                ],
             },
         ],
     },
