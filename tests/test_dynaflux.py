@@ -10,6 +10,8 @@ from dynaflux import (
     WAD,
     DynaFluxParams,
     Ledger,
+    compute_gross_from_net,
+    compute_net,
     compute_summary,
     exp_neg_wad,
     freeze_params_to_solidity,
@@ -150,3 +152,26 @@ def test_yaml_params_and_solidity_freeze(tmp_path: Path) -> None:
     assert 'string public constant name = "CustomFlux";' in frozen_text
     assert "uint256 public constant C_TRANSFER = 950_000_000_000_000_000;" in frozen_text
     assert "uint8 public constant POW_DIFFICULTY_BITS = 10;" in frozen_text
+
+
+def test_compute_gross_from_net() -> None:
+    """Target net amount accurately inverses to required gross amount."""
+    late = 200 * WAD
+    early = 1_000 * WAD
+
+    # Test generation/minting inverse
+    target_net_mint = 50 * WAD
+    required_gross_mint = compute_gross_from_net(target_net_mint, late, early, is_gen=True)
+    actual_net_mint = compute_net(required_gross_mint, late, early, is_gen=True)
+    # Target and actual net should match with extreme precision (< 1e-6 DFX difference)
+    assert abs(actual_net_mint - target_net_mint) / WAD < 1e-4
+
+    # Test transfer inverse
+    target_net_transfer = 80 * WAD
+    required_gross_transfer = compute_gross_from_net(target_net_transfer, late, early, is_gen=False)
+    actual_net_transfer = compute_net(required_gross_transfer, late, early, is_gen=False)
+    assert abs(actual_net_transfer - target_net_transfer) / WAD < 1e-4
+
+    # Capacity overflow should raise ValueError
+    with pytest.raises(ValueError, match="熱量キャパシティ"):
+        compute_gross_from_net(5_000 * WAD, late, early, is_gen=True)
