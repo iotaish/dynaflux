@@ -62,6 +62,36 @@ const DYNAFLUX_ABI = parseAbi([
 ]);
 
 const POW_TARGET = (1n << 256n) - 1n >> 8n;
+const WAD = 10n ** 18n;
+const C_TRANSFER = 900_000_000_000_000_000n;
+const C_GEN = 1_620_000_000_000_000_000n;
+
+export function computeGrossFromNet(
+  netWei: bigint,
+  late: bigint,
+  early: bigint,
+  isGen: boolean
+): bigint {
+  if (netWei <= 0n) return 0n;
+  const c = isGen ? C_GEN : C_TRANSFER;
+  const cLate = (c * late) / WAD;
+  if (early <= cLate) {
+    throw new Error("熱量キャパシティが枯渇しています（上限が 0 です）");
+  }
+  const remainingCapacity = ((early - cLate) * WAD) / c;
+  if (netWei >= remainingCapacity) {
+    const capNum = Number(remainingCapacity) / 1e18;
+    throw new Error(
+      `指定手取り額 (${(Number(netWei) / 1e18).toFixed(4)} DFX) は現在の熱量キャパシティ (${capNum.toFixed(4)} DFX) を超過しています`
+    );
+  }
+  const ratio = Number(remainingCapacity - netWei) / Number(remainingCapacity);
+  const lnVal = -Math.log(ratio);
+  const earlyNum = Number(early) / 1e18;
+  const cNum = Number(c) / 1e18;
+  const grossNum = (earlyNum / cNum) * lnVal;
+  return parseEther(grossNum.toFixed(6));
+}
 
 export function discordUserToAddress(discordUserId: string): Address {
   const hash = keccak256(encodePacked(["string", "string"], ["DYNAFLUX_DISCORD_USER:", discordUserId]));
@@ -441,12 +471,14 @@ export default {
                 return;
               }
 
-              const transferMode = Boolean(getOption("transfer_mode") ?? false);
-              const recipientUserId = (getOption("recipient") as string | undefined) ?? callerId;
+              const amountBasis = String(getOption("amount_basis") ?? "gross").toLowerCase();
+              const recipientOption = getOption("recipient") as string | undefined;
+              const isTransfer = Boolean(recipientOption && recipientOption !== callerId);
+              const recipientUserId = recipientOption ?? callerId;
               const recipientAddress = discordUserToAddress(recipientUserId);
 
-              if (transferMode) {
-                const { txHash, actualNetWei } = await withConcurrencyRetry(async (attempt) => {
+              if (isTransfer) {
+                const { txHash, effectiveGrossWei, actualNetWei } = await withConcurrencyRetry(async (attempt) => {
                   if (attempt > 1) {
                     await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1500));
                   }
@@ -457,12 +489,23 @@ export default {
                       "⏳ **先行トランザクションの承認待ちです（最大12秒）...**"
                     );
                   });
+
+                  let effectiveGrossWei = grossWei;
+                  if (amountBasis === "net") {
+                    const [late, early] = await publicClient.readContract({
+                      address: env.CONTRACT_ADDRESS,
+                      abi: DYNAFLUX_ABI,
+                      functionName: "currentSummary",
+                    });
+                    effectiveGrossWei = computeGrossFromNet(grossWei, late, early, false);
+                  }
+
                   const [quote, currentNonce] = await Promise.all([
                     publicClient.readContract({
                       address: env.CONTRACT_ADDRESS,
                       abi: DYNAFLUX_ABI,
                       functionName: "quoteNet",
-                      args: [grossWei, false],
+                      args: [effectiveGrossWei, false],
                     }),
                     publicClient.getTransactionCount({
                       address: relayerAccount.address,
@@ -473,7 +516,7 @@ export default {
                     address: env.CONTRACT_ADDRESS,
                     abi: DYNAFLUX_ABI,
                     functionName: "relayTransfer",
-                    args: [callerAddress, recipientAddress, grossWei],
+                    args: [callerAddress, recipientAddress, effectiveGrossWei],
                     nonce: currentNonce,
                   });
                   await patchDiscordFollowup(
@@ -487,18 +530,19 @@ export default {
                   }
                   const logs = parseEventLogs({ abi: DYNAFLUX_ABI, eventName: "StateTransition", logs: receipt.logs });
                   const net = logs[0]?.args.netAmount ?? quote;
-                  return { txHash: hash, actualNetWei: net };
+                  return { txHash: hash, effectiveGrossWei, actualNetWei: net };
                 }, 2);
 
+                const basisNote = amountBasis === "net" ? ` (手取り目標: \`${fmt6g(grossWei)} DFX\` から逆算)` : "";
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
                   `**[送金完了]** <@${callerId}> → <@${recipientUserId}>\n` +
-                    `- Gross: \`${fmt6g(grossWei)} DFX\` → **Net: \`${fmt6g(actualNetWei)} DFX\`**\n` +
+                    `- Gross: \`${fmt6g(effectiveGrossWei)} DFX\`${basisNote} → **Net: \`${fmt6g(actualNetWei)} DFX\`**\n` +
                     `- Tx: [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
               } else {
-                const { txHash, actualNetWei, hashes } = await withConcurrencyRetry(async (attempt) => {
+                const { txHash, effectiveGrossWei, actualNetWei, hashes } = await withConcurrencyRetry(async (attempt) => {
                   if (attempt > 1) {
                     await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1500));
                   }
@@ -509,6 +553,17 @@ export default {
                       "⏳ **先行トランザクションの承認待ちです（最大12秒）...**"
                     );
                   });
+
+                  let effectiveGrossWei = grossWei;
+                  if (amountBasis === "net") {
+                    const [late, early] = await publicClient.readContract({
+                      address: env.CONTRACT_ADDRESS,
+                      abi: DYNAFLUX_ABI,
+                      functionName: "currentSummary",
+                    });
+                    effectiveGrossWei = computeGrossFromNet(grossWei, late, early, true);
+                  }
+
                   const [currentHash, quote, currentNonce] = await Promise.all([
                     publicClient.readContract({
                       address: env.CONTRACT_ADDRESS,
@@ -519,19 +574,19 @@ export default {
                       address: env.CONTRACT_ADDRESS,
                       abi: DYNAFLUX_ABI,
                       functionName: "quoteNet",
-                      args: [grossWei, true],
+                      args: [effectiveGrossWei, true],
                     }),
                     publicClient.getTransactionCount({
                       address: relayerAccount.address,
                       blockTag: "latest",
                     }),
                   ]);
-                  const pow = solveLightweightPow(currentHash, recipientAddress, grossWei);
+                  const pow = solveLightweightPow(currentHash, recipientAddress, effectiveGrossWei);
                   const hash = await walletClient.writeContract({
                     address: env.CONTRACT_ADDRESS,
                     abi: DYNAFLUX_ABI,
                     functionName: "mintTo",
-                    args: [recipientAddress, grossWei, pow.nonce],
+                    args: [recipientAddress, effectiveGrossWei, pow.nonce],
                     nonce: currentNonce,
                   });
                   await patchDiscordFollowup(
@@ -545,14 +600,15 @@ export default {
                   }
                   const logs = parseEventLogs({ abi: DYNAFLUX_ABI, eventName: "StateTransition", logs: receipt.logs });
                   const net = logs[0]?.args.netAmount ?? quote;
-                  return { txHash: hash, actualNetWei: net, hashes: pow.hashes };
+                  return { txHash: hash, effectiveGrossWei, actualNetWei: net, hashes: pow.hashes };
                 }, 2);
 
+                const basisNote = amountBasis === "net" ? ` (手取り目標: \`${fmt6g(grossWei)} DFX\` から逆算)` : "";
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
                   interaction.token,
                   `**[発行完了]** → <@${recipientUserId}>\n` +
-                    `- Gross: \`${fmt6g(grossWei)} DFX\` → **Net: \`${fmt6g(actualNetWei)} DFX\`** (PoW: \`${hashes}\`)\n` +
+                    `- Gross: \`${fmt6g(effectiveGrossWei)} DFX\`${basisNote} → **Net: \`${fmt6g(actualNetWei)} DFX\`** (PoW: \`${hashes}\`)\n` +
                     `- Tx: [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
               }
