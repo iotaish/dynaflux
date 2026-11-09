@@ -111,12 +111,37 @@ async function withConcurrencyRetry<T>(
     } catch (err) {
       lastError = err;
       if (attempt < maxAttempts) {
-        // Wait 600ms * attempt before re-reading fresh stateHash & pending nonce
-        await new Promise((r) => setTimeout(r, 600 * attempt));
+        // Wait before re-reading fresh stateHash & pending nonce
+        await new Promise((r) => setTimeout(r, 800 * attempt));
       }
     }
   }
   throw lastError;
+}
+
+async function waitUntilRelayerIdle(
+  client: { getTransactionCount: (args: { address: Address; blockTag: "latest" | "pending" }) => Promise<number> },
+  relayerAddress: Address,
+  onWait?: () => Promise<void>,
+  maxWaitMs = 45_000
+): Promise<number> {
+  const start = Date.now();
+  let informed = false;
+  while (Date.now() - start < maxWaitMs) {
+    const [latestNonce, pendingNonce] = await Promise.all([
+      client.getTransactionCount({ address: relayerAddress, blockTag: "latest" }),
+      client.getTransactionCount({ address: relayerAddress, blockTag: "pending" }),
+    ]);
+    if (latestNonce >= pendingNonce) {
+      return latestNonce;
+    }
+    if (!informed && onWait) {
+      informed = true;
+      await onWait();
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+  return client.getTransactionCount({ address: relayerAddress, blockTag: "pending" });
 }
 
 async function verifyDiscordSignature(
@@ -128,12 +153,12 @@ async function verifyDiscordSignature(
   const timestamp = request.headers.get("X-Signature-Timestamp");
   if (!signatureHex || !timestamp) return false;
 
-  const hexToBytes = (hex: string): Uint8Array => {
+  const hexToBytes = (hex: string): Uint8Array<ArrayBuffer> => {
     const bytes = new Uint8Array(hex.length / 2);
     for (let i = 0; i < hex.length; i += 2) {
       bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
     }
-    return bytes;
+    return bytes as Uint8Array<ArrayBuffer>;
   };
 
   const key = await crypto.subtle.importKey(
@@ -145,7 +170,7 @@ async function verifyDiscordSignature(
   );
 
   const message = new TextEncoder().encode(timestamp + bodyText);
-  return crypto.subtle.verify("Ed25519", key, hexToBytes(signatureHex), message);
+  return crypto.subtle.verify("Ed25519", key, hexToBytes(signatureHex), message as Uint8Array<ArrayBuffer>);
 }
 
 /**
@@ -153,6 +178,7 @@ async function verifyDiscordSignature(
  * - Exact numbers with <= 6 significant digits are shown as-is (e.g. `1000`, `0.001`).
  * - Rounded numbers keep all 6 significant digits (including trailing zeros like `≈ 287.950`)
  *   so table columns align cleanly.
+ * - Large numbers avoid scientific notation (e.g. `≈ 1,111,111` instead of `≈ 1.11111e+6`).
  */
 function fmt6g(wei: bigint): string {
   const exactStr = formatEther(wei);
@@ -162,6 +188,10 @@ function fmt6g(wei: bigint): string {
   const cleanExact = Number(prec6).toString();
   if (Number(prec6) === num && exactStr.length <= cleanExact.length) {
     return exactStr;
+  }
+  if (prec6.includes("e") || prec6.includes("E")) {
+    const fixed = num.toLocaleString("en-US", { maximumFractionDigits: 4 });
+    return `≈ ${fixed}`;
   }
   return `≈ ${prec6}`;
 }
@@ -300,7 +330,9 @@ export default {
         ]);
         const relayerEth = await publicClient.getBalance({ address: relayerAddr });
         const ethNum = Number(formatEther(relayerEth));
-        const gasStatus = ethNum < 0.005 ? "⚠️ 要補充" : "OK";
+        const isLowGas = ethNum < 0.005;
+        const gasStatus = isLowGas ? "⚠️ 要補充" : "OK";
+        const topUpHint = isLowGas ? `\n👉 ガス代補充先 (Sepolia ETH):\n\`${relayerAddr}\`` : "";
 
         return jsonResponse({
           type: 4,
@@ -308,7 +340,9 @@ export default {
             content:
               `**[状態証明]** **VALID** (Steps: \`${steps.toString()}\`)\n` +
               `- \`stateHash\`: \`${stateHash}\`\n` +
-              `- Contract: [\`${env.CONTRACT_ADDRESS}\`](${env.EXPLORER_URL}/address/${env.CONTRACT_ADDRESS}) | Gas: \`${fmt6g(relayerEth)} ETH\` (${gasStatus})`,
+              `- Contract: [\`${env.CONTRACT_ADDRESS}\`](${env.EXPLORER_URL}/address/${env.CONTRACT_ADDRESS})\n` +
+              `- Relayer: [\`${relayerAddr}\`](${env.EXPLORER_URL}/address/${relayerAddr}) | Gas: \`${fmt6g(relayerEth)} ETH\` (${gasStatus})` +
+              topUpHint,
           },
         });
       }
@@ -345,8 +379,18 @@ export default {
                   );
                   return;
                 }
-                const { txHash, netQuote } = await withConcurrencyRetry(async () => {
-                  const [quote, pendingNonce] = await Promise.all([
+                const { txHash, actualNetWei } = await withConcurrencyRetry(async (attempt) => {
+                  if (attempt > 1) {
+                    await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1500));
+                  }
+                  await waitUntilRelayerIdle(publicClient, relayerAccount.address, async () => {
+                    await patchDiscordFollowup(
+                      env.DISCORD_APP_ID,
+                      interaction.token,
+                      "⏳ **先行トランザクションの承認待ちです（最大12秒）...**"
+                    );
+                  });
+                  const [quote, currentNonce] = await Promise.all([
                     publicClient.readContract({
                       address: env.CONTRACT_ADDRESS,
                       abi: DYNAFLUX_ABI,
@@ -355,7 +399,7 @@ export default {
                     }),
                     publicClient.getTransactionCount({
                       address: relayerAccount.address,
-                      blockTag: "pending",
+                      blockTag: "latest",
                     }),
                   ]);
                   const hash = await walletClient.writeContract({
@@ -363,19 +407,21 @@ export default {
                     abi: DYNAFLUX_ABI,
                     functionName: "relayTransfer",
                     args: [callerAddress, toAddressRaw, grossWei],
-                    nonce: pendingNonce,
+                    nonce: currentNonce,
                   });
-                  return { txHash: hash, netQuote: quote };
-                });
-
-                await patchDiscordFollowup(
-                  env.DISCORD_APP_ID,
-                  interaction.token,
-                  `⏳ **出金承認中...** [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
-                );
-                const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
-                const logs = parseEventLogs({ abi: DYNAFLUX_ABI, eventName: "StateTransition", logs: receipt.logs });
-                const actualNetWei = logs[0]?.args.netAmount ?? netQuote;
+                  await patchDiscordFollowup(
+                    env.DISCORD_APP_ID,
+                    interaction.token,
+                    `⏳ **出金承認中...** [\`${hash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${hash})`
+                  );
+                  const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
+                  if (receipt.status === "reverted") {
+                    throw new Error(`オンチェーン実行がリバート（失敗）しました (Tx: ${hash})`);
+                  }
+                  const logs = parseEventLogs({ abi: DYNAFLUX_ABI, eventName: "StateTransition", logs: receipt.logs });
+                  const net = logs[0]?.args.netAmount ?? quote;
+                  return { txHash: hash, actualNetWei: net };
+                }, 2);
 
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
@@ -392,8 +438,18 @@ export default {
               const recipientAddress = discordUserToAddress(recipientUserId);
 
               if (transferMode) {
-                const { txHash, netQuote } = await withConcurrencyRetry(async () => {
-                  const [quote, pendingNonce] = await Promise.all([
+                const { txHash, actualNetWei } = await withConcurrencyRetry(async (attempt) => {
+                  if (attempt > 1) {
+                    await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1500));
+                  }
+                  await waitUntilRelayerIdle(publicClient, relayerAccount.address, async () => {
+                    await patchDiscordFollowup(
+                      env.DISCORD_APP_ID,
+                      interaction.token,
+                      "⏳ **先行トランザクションの承認待ちです（最大12秒）...**"
+                    );
+                  });
+                  const [quote, currentNonce] = await Promise.all([
                     publicClient.readContract({
                       address: env.CONTRACT_ADDRESS,
                       abi: DYNAFLUX_ABI,
@@ -402,7 +458,7 @@ export default {
                     }),
                     publicClient.getTransactionCount({
                       address: relayerAccount.address,
-                      blockTag: "pending",
+                      blockTag: "latest",
                     }),
                   ]);
                   const hash = await walletClient.writeContract({
@@ -410,19 +466,21 @@ export default {
                     abi: DYNAFLUX_ABI,
                     functionName: "relayTransfer",
                     args: [callerAddress, recipientAddress, grossWei],
-                    nonce: pendingNonce,
+                    nonce: currentNonce,
                   });
-                  return { txHash: hash, netQuote: quote };
-                });
-
-                await patchDiscordFollowup(
-                  env.DISCORD_APP_ID,
-                  interaction.token,
-                  `⏳ **送金承認中...** [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
-                );
-                const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
-                const logs = parseEventLogs({ abi: DYNAFLUX_ABI, eventName: "StateTransition", logs: receipt.logs });
-                const actualNetWei = logs[0]?.args.netAmount ?? netQuote;
+                  await patchDiscordFollowup(
+                    env.DISCORD_APP_ID,
+                    interaction.token,
+                    `⏳ **送金承認中...** [\`${hash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${hash})`
+                  );
+                  const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
+                  if (receipt.status === "reverted") {
+                    throw new Error(`オンチェーン実行がリバート（失敗）しました (Tx: ${hash})`);
+                  }
+                  const logs = parseEventLogs({ abi: DYNAFLUX_ABI, eventName: "StateTransition", logs: receipt.logs });
+                  const net = logs[0]?.args.netAmount ?? quote;
+                  return { txHash: hash, actualNetWei: net };
+                }, 2);
 
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,
@@ -432,8 +490,18 @@ export default {
                     `- Tx: [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
                 );
               } else {
-                const { txHash, netQuote, nonce, hashes } = await withConcurrencyRetry(async () => {
-                  const [currentHash, quote, pendingNonce] = await Promise.all([
+                const { txHash, actualNetWei, hashes } = await withConcurrencyRetry(async (attempt) => {
+                  if (attempt > 1) {
+                    await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1500));
+                  }
+                  await waitUntilRelayerIdle(publicClient, relayerAccount.address, async () => {
+                    await patchDiscordFollowup(
+                      env.DISCORD_APP_ID,
+                      interaction.token,
+                      "⏳ **先行トランザクションの承認待ちです（最大12秒）...**"
+                    );
+                  });
+                  const [currentHash, quote, currentNonce] = await Promise.all([
                     publicClient.readContract({
                       address: env.CONTRACT_ADDRESS,
                       abi: DYNAFLUX_ABI,
@@ -447,7 +515,7 @@ export default {
                     }),
                     publicClient.getTransactionCount({
                       address: relayerAccount.address,
-                      blockTag: "pending",
+                      blockTag: "latest",
                     }),
                   ]);
                   const pow = solveLightweightPow(currentHash, recipientAddress, grossWei);
@@ -456,19 +524,21 @@ export default {
                     abi: DYNAFLUX_ABI,
                     functionName: "mintTo",
                     args: [recipientAddress, grossWei, pow.nonce],
-                    nonce: pendingNonce,
+                    nonce: currentNonce,
                   });
-                  return { txHash: hash, netQuote: quote, nonce: pow.nonce, hashes: pow.hashes };
-                });
-
-                await patchDiscordFollowup(
-                  env.DISCORD_APP_ID,
-                  interaction.token,
-                  `⏳ **発行承認中...** [\`${txHash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${txHash})`
-                );
-                const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
-                const logs = parseEventLogs({ abi: DYNAFLUX_ABI, eventName: "StateTransition", logs: receipt.logs });
-                const actualNetWei = logs[0]?.args.netAmount ?? netQuote;
+                  await patchDiscordFollowup(
+                    env.DISCORD_APP_ID,
+                    interaction.token,
+                    `⏳ **発行承認中...** [\`${hash.slice(0, 14)}...\`](${env.EXPLORER_URL}/tx/${hash})`
+                  );
+                  const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
+                  if (receipt.status === "reverted") {
+                    throw new Error(`オンチェーン実行がリバート（失敗）しました (Tx: ${hash})`);
+                  }
+                  const logs = parseEventLogs({ abi: DYNAFLUX_ABI, eventName: "StateTransition", logs: receipt.logs });
+                  const net = logs[0]?.args.netAmount ?? quote;
+                  return { txHash: hash, actualNetWei: net, hashes: pow.hashes };
+                }, 2);
 
                 await patchDiscordFollowup(
                   env.DISCORD_APP_ID,

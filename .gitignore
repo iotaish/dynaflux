@@ -8,3 +8,4 @@ data/
 node_modules/
 .wrangler/
 .relayer-wallet.json
+cloudflare/snapshots/
